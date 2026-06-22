@@ -1,0 +1,15 @@
+{
+  "name": "ระบบจัดการคลังยา รพ.สต.",
+  "short_name": "คลังยา",
+  "description": "ระบบจัดการคลังยาและแจ้งเตือนวันหมดอายุ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#2563eb",
+  "lang": "th",
+  "icons": [
+    { "src": "assets/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

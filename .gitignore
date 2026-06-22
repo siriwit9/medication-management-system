@@ -1,0 +1,27 @@
+# ระบบไฟล์ macOS / Windows
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Node (เผื่ออนาคต)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ไฟล์ชั่วคราว / ฟอนต์ขนาดใหญ่ (ถ้ามี)
+*.log
+/tmp/
+
+# Apps Script local (clasp) — ไม่อัปโหลดข้อมูลลับ
+.clasp.json
+.clasprc.json
