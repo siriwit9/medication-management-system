@@ -25,3 +25,6 @@ yarn-error.log*
 # Apps Script local (clasp) — ไม่อัปโหลดข้อมูลลับ
 .clasp.json
 .clasprc.json
+
+# โฟลเดอร์ภาพแผนงาน — ไม่เผยแพร่สู่สาธารณะ
+วางแผน/
