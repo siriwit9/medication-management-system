@@ -8,7 +8,7 @@ var SHEET_DEFS = {
   Locations: ['id', 'name', 'icon', 'color', 'isReceivingDefault', 'sortOrder'],
   Medicines: ['id', 'name', 'barcode', 'unit', 'imageFileId', 'minStock', 'requireLot', 'defaultLocationId'],
   Stock: ['id', 'medicineId', 'locationId', 'lot', 'expiryDate', 'qty'],
-  Movements: ['id', 'type', 'medicineId', 'lot', 'expiryDate', 'fromLocationId', 'toLocationId', 'qty', 'reason', 'userId', 'timestamp'],
+  Movements: ['id', 'type', 'medicineId', 'lot', 'expiryDate', 'fromLocationId', 'toLocationId', 'qty', 'reason', 'source', 'userId', 'timestamp'],
   Sessions: ['token', 'userId', 'role', 'expiresAt']
 };
 

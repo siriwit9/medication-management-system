@@ -37,6 +37,7 @@ function logMovement_(m) {
     toLocationId: m.toLocationId || '',
     qty: m.qty,
     reason: m.reason || '',
+    source: m.source || '',
     userId: m.userId || '',
     timestamp: new Date().toISOString()
   });
@@ -67,7 +68,7 @@ function receiveStock(p, user) {
       });
     }
     logMovement_({ type: 'receive', medicineId: p.medicineId, lot: p.lot, expiryDate: p.expiryDate,
-      toLocationId: p.locationId, qty: qty, reason: p.reason || '', userId: user.id });
+      toLocationId: p.locationId, qty: qty, reason: p.reason || '', source: p.source || '', userId: user.id });
     return { received: qty };
   });
 }

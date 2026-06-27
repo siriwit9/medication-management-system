@@ -121,7 +121,7 @@ function listMovements(filters) {
       lot: mv.lot, expiryDate: mv.expiryDate,
       fromLocationName: (locs[mv.fromLocationId] || {}).name || '',
       toLocationName: (locs[mv.toLocationId] || {}).name || '',
-      qty: Number(mv.qty), reason: mv.reason,
+      qty: Number(mv.qty), reason: mv.reason, source: mv.source || '',
       userName: (users[mv.userId] || {}).username || '', timestamp: mv.timestamp
     };
   }).sort(function (a, b) { return String(b.timestamp).localeCompare(String(a.timestamp)); });
@@ -150,10 +150,10 @@ function exportRows(kind, filters) {
   var typeLabel = { receive: 'รับเข้า', transfer: 'ย้าย', dispense: 'ตัดจ่าย/ทิ้ง', adjust: 'ปรับยอด' };
   return {
     kind: kind,
-    headers: ['วันเวลา', 'ประเภท', 'ชื่อยา', 'Lot', 'วันหมดอายุ', 'จาก', 'ไป', 'จำนวน', 'หมายเหตุ', 'ผู้ทำ'],
+    headers: ['วันเวลา', 'ประเภท', 'ชื่อยา', 'Lot', 'วันหมดอายุ', 'จาก', 'ไป', 'จำนวน', 'แหล่งที่มา', 'หมายเหตุ', 'ผู้ทำ'],
     rows: movements.map(function (m) {
       return [m.timestamp, typeLabel[m.type] || m.type, m.medicineName, m.lot, m.expiryDate,
-        m.fromLocationName, m.toLocationName, m.qty, m.reason, m.userName];
+        m.fromLocationName, m.toLocationName, m.qty, m.source, m.reason, m.userName];
     })
   };
 }
