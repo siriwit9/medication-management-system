@@ -82,12 +82,21 @@ function renderNotify(content) {
       '<div class="field"><label>ช่องทาง</label><select id="n-channel"><option value="telegram">Telegram</option></select></div>' +
       '<div class="field"><label>Bot Token</label><input id="n-token" value="' + U.escapeHtml(s.telegramToken || '') + '" placeholder="123456:ABC-..." /></div>' +
       '<div class="field"><label>Chat ID</label><input id="n-chat" value="' + U.escapeHtml(s.telegramChatId || '') + '" placeholder="-1001234567890" /></div>' +
-      '<div class="field"><label>เวลาส่งรายวัน</label><input id="n-time" type="time" value="' + U.escapeHtml(s.notifyTime || '08:00') + '" /></div>' +
-      '<div class="row"><button class="btn btn-primary" id="n-save"><span data-lucide="save"></span> บันทึก</button>' +
+      '<div class="field"><label>เวลาส่งรายวัน</label><input id="n-time" type="time" value="' + U.escapeHtml(s.notifyTime || '08:00') + '" />' +
+      '<small class="muted">ระบบจะส่งแจ้งเตือนทุกวันตามเวลาที่ตั้ง (บันทึกแล้วมีผลอัตโนมัติ)</small></div>' +
+      '<div class="row">' +
+      '<button class="btn btn-primary" id="n-save"><span data-lucide="save"></span> บันทึก</button>' +
       '<button class="btn" id="n-test"><span data-lucide="send"></span> ส่งข้อความทดสอบ</button></div>' +
-      '<p class="muted mt-16">Telegram: สร้างบอทด้วย <b>@BotFather</b> เพื่อรับ token แล้วหา chat id ของกลุ่ม/ผู้รับ · ' +
-      'หลังบันทึกครั้งแรก ให้เปิด Apps Script รันฟังก์ชัน <b>setupNotifications</b> หนึ่งครั้งเพื่ออนุญาตสิทธิ์ตัวจับเวลา</p>' +
-      '<p class="muted">หมายเหตุ: LINE Notify ปิดบริการแล้ว — เวอร์ชันถัดไปจะรองรับ LINE Messaging API</p></div>';
+      '<div class="mt-16" style="padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">' +
+      '<p style="margin:0 0 4px;font-weight:600">📋 วิธีตั้งค่า Telegram</p>' +
+      '<ol style="margin:0;padding-left:18px;font-size:13px">' +
+      '<li>สร้างบอทด้วย <b>@BotFather</b> ใน Telegram เพื่อรับ Bot Token</li>' +
+      '<li>เพิ่มบอทเข้ากลุ่ม หรือแชทกับบอทเพื่อหา Chat ID</li>' +
+      '<li>กรอก Token + Chat ID ด้านบนแล้วกดบันทึก</li>' +
+      '<li>กด "ส่งข้อความทดสอบ" เพื่อตรวจสอบ</li>' +
+      '</ol></div>' +
+      '<p class="muted mt-16"><b>หมายเหตุ:</b> ครั้งแรกที่ตั้งค่า ต้องเข้า Apps Script Editor → รันฟังก์ชัน <b>setupNotifications</b> หนึ่งครั้งเพื่ออนุญาตสิทธิ์ หลังจากนั้นตั้งเวลาจากหน้านี้ได้เลย</p>' +
+      '</div>';
     U.refreshIcons();
 
     content.querySelector('#n-save').onclick = function () {
@@ -97,7 +106,15 @@ function renderNotify(content) {
         telegramToken: content.querySelector('#n-token').value.trim(),
         telegramChatId: content.querySelector('#n-chat').value.trim(),
         notifyTime: content.querySelector('#n-time').value
-      } }).then(function () { Toast.success('บันทึกแล้ว — อย่าลืมรัน setupNotifications ใน Apps Script'); })
+      } }).then(function () {
+        var time = content.querySelector('#n-time').value || '08:00';
+        var enabled = content.querySelector('#n-enabled').checked;
+        if (enabled) {
+          Toast.success('บันทึกแล้ว — แจ้งเตือนรายวันเวลา ' + time + ' น.');
+        } else {
+          Toast.success('บันทึกแล้ว — ปิดการแจ้งเตือน');
+        }
+      })
         .catch(function (e) { Toast.error(e.message); })
         .finally(function () { btn.disabled = false; });
     };
