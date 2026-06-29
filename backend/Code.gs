@@ -39,7 +39,12 @@ var ACTION_ROLES = {
   'saveUser': 'admin',
   'deleteUser': 'admin',
   'resetPassword': 'admin',
-  'testNotify': 'admin'
+  'testNotify': 'admin',
+  // ใบเบิกยา
+  'listRequisitions': 'staff',
+  'getRequisition': 'staff',
+  'saveRequisition': 'staff',
+  'deleteRequisition': 'pharmacist'
 };
 
 var ROLE_RANK = { 'staff': 1, 'pharmacist': 2, 'admin': 3 };
@@ -119,6 +124,12 @@ function routeAction(action, req, user) {
     case 'deleteUser': return deleteUser(req.id, user);
     case 'resetPassword': return resetPassword(req.id, req.newPassword, user);
     case 'testNotify': return testNotify();
+
+    // ใบเบิกยา
+    case 'listRequisitions': return listRequisitions();
+    case 'getRequisition': return getRequisition(req.id);
+    case 'saveRequisition': return saveRequisition(req.requisition, user);
+    case 'deleteRequisition': return deleteRequisition(req.id, user);
 
     default:
       throw new Error('UNKNOWN_ACTION:' + action);

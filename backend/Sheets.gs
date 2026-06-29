@@ -9,6 +9,8 @@ var SHEET_DEFS = {
   Medicines: ['id', 'name', 'barcode', 'unit', 'imageFileId', 'minStock', 'requireLot', 'defaultLocationId'],
   Stock: ['id', 'medicineId', 'locationId', 'lot', 'expiryDate', 'qty'],
   Movements: ['id', 'type', 'medicineId', 'lot', 'expiryDate', 'fromLocationId', 'toLocationId', 'qty', 'reason', 'source', 'userId', 'timestamp'],
+  Requisitions: ['id', 'reqNumber', 'reqDate', 'requesterName', 'approverName', 'distributorName', 'receiverName', 'status', 'note', 'createdBy', 'createdAt'],
+  RequisitionItems: ['id', 'requisitionId', 'medicineId', 'qtyRequested', 'qtyApproved', 'qtyRemaining', 'note'],
   Sessions: ['token', 'userId', 'role', 'expiresAt']
 };
 

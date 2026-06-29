@@ -7,6 +7,7 @@ window.Router = (function () {
     'locations-stock': { render: function (v, p) { return Views.locationsStock(v, p); } },
     'transfer': { render: function (v, p) { return Views.transfer(v, p); } },
     'catalog': { render: function (v, p) { return Views.catalog(v, p); }, minRole: 'pharmacist' },
+    'requisition': { render: function (v, p) { return Views.requisition(v, p); } },
     'history': { render: function (v, p) { return Views.history(v, p); } },
     'settings': { render: function (v, p) { return Views.settings(v, p); } },
     'help': { render: function (v, p) { return Views.help(v, p); } }
