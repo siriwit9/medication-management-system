@@ -4,6 +4,11 @@
 window.API = (function () {
   function url() {
     var u = window.APP_CONFIG && window.APP_CONFIG.APPS_SCRIPT_URL;
+    var provider = window.APP_CONFIG && window.APP_CONFIG.DATA_PROVIDER;
+    // ถ้าใช้ Supabase เป็นหลัก ไม่จำเป็นต้องบังคับตั้งค่า APPS_SCRIPT_URL
+    if (provider === 'supabase') {
+      return u || '';
+    }
     if (!u || u.indexOf('PASTE_YOUR') === 0) {
       throw new Error('ยังไม่ได้ตั้งค่า APPS_SCRIPT_URL ใน assets/js/config.js');
     }
@@ -59,17 +64,22 @@ window.API = (function () {
       case 'deleteReceipt': return sb.deleteReceipt(params.id);
       case 'testNotify': return Promise.resolve(true);
       default:
+        var scriptUrl = url();
+        if (!scriptUrl) return Promise.resolve({});
         return callAppsScript(action, params);
     }
   }
 
   function callAppsScript(action, params) {
+    var scriptUrl = url();
+    if (!scriptUrl) return Promise.reject(new Error('ไม่ได้ตั้งค่า APPS_SCRIPT_URL'));
+
     var body = Object.assign({ action: action }, params);
     var token = window.Auth && window.Auth.getToken && window.Auth.getToken();
     if (token) body.token = token;
 
     return Promise.resolve().then(function () {
-      return fetch(url(), {
+      return fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(body),
@@ -81,7 +91,6 @@ window.API = (function () {
       if (!json.ok) {
         var err = new Error(json.error || 'เกิดข้อผิดพลาด');
         err.code = json.error;
-        // กรณีใช้ Supabase หากคำขอสำรองไปยัง Apps Script คืนค่า UNAUTHORIZED จะไม่ลบ session ในเครื่อง
         if (json.error === 'UNAUTHORIZED' && window.APP_CONFIG.DATA_PROVIDER === 'apps_script') {
           window.Auth && window.Auth.onUnauthorized && window.Auth.onUnauthorized();
         }
