@@ -17,9 +17,11 @@ window.App = (function () {
     shell.classList.remove('hidden');
 
     // อัปเดต badge ผู้ใช้
-    var user = Auth.getUser();
+    var user = Auth.getUser() || {};
+    var username = user.username || 'admin';
+    var roleName = user.role || 'admin';
     document.getElementById('user-badge').textContent =
-      user.username + ' · ' + (Auth.ROLE_LABEL[user.role] || user.role);
+      username + ' · ' + (Auth.ROLE_LABEL[roleName] || roleName);
 
     // ซ่อนเมนูตามสิทธิ์
     document.querySelectorAll('[data-min-role]').forEach(function (a) {
@@ -27,7 +29,9 @@ window.App = (function () {
       a.classList.toggle('hidden', !Auth.hasRole(need));
     });
 
-    if (!location.hash || location.hash === '#/login') location.hash = '#/dashboard';
+    if (!location.hash || location.hash === '#/login') {
+      location.hash = '#/dashboard';
+    }
     Router.navigate();
     loadBranding();
   }
@@ -35,7 +39,7 @@ window.App = (function () {
   function loadBranding() {
     API.call('getSettings').then(function (s) {
       settingsCache = s;
-      if (s.hospitalName) document.getElementById('brand-name').textContent = s.hospitalName;
+      if (s && s.hospitalName) document.getElementById('brand-name').textContent = s.hospitalName;
     }).catch(function () {});
   }
 
@@ -54,8 +58,8 @@ window.App = (function () {
       var p = document.getElementById('login-password').value;
       Auth.login(u, p).then(function () {
         document.getElementById('login-password').value = '';
-        location.hash = '#/dashboard';
         render();
+        location.hash = '#/dashboard';
       }).catch(function (err) {
         errBox.textContent = err.message || 'เข้าสู่ระบบไม่สำเร็จ';
         errBox.classList.remove('hidden');

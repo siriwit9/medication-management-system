@@ -1,5 +1,5 @@
-/* Service Worker — cache app shell แบบเรียบง่าย (network-first สำหรับ API ไม่ถูก cache) */
-var CACHE = 'medstock-v1';
+/* Service Worker — medstock-v2 */
+var CACHE = 'medstock-v2';
 var SHELL = [
   './',
   './index.html',
@@ -7,10 +7,13 @@ var SHELL = [
   './assets/css/styles.css',
   './assets/js/config.js',
   './assets/js/utils.js',
+  './assets/js/supabase.js',
   './assets/js/api.js',
   './assets/js/auth.js',
   './assets/js/router.js',
-  './assets/js/app.js'
+  './assets/js/app.js',
+  './assets/js/views/receipts.js',
+  './assets/js/views/jhcis-import.js'
 ];
 
 self.addEventListener('install', function (e) {
@@ -27,15 +30,18 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var url = e.request.url;
-  // ไม่ cache คำขอ API (Apps Script) หรือ POST
-  if (e.request.method !== 'GET' || url.indexOf('script.google.com') >= 0 || url.indexOf('googleusercontent') >= 0) {
+  // ไม่ cache คำขอ API (Apps Script / Supabase) หรือ POST
+  if (e.request.method !== 'GET' || url.indexOf('script.google.com') >= 0 || url.indexOf('supabase.co') >= 0) {
     return;
   }
+  // Network first สำหรับไฟล์ JS เพื่อให้ได้โค้ดอัปเดตล่าสุดเสมอ
   e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      return cached || fetch(e.request).then(function (res) {
-        return res;
-      }).catch(function () { return cached; });
+    fetch(e.request).then(function (res) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+      return res;
+    }).catch(function () {
+      return caches.match(e.request);
     })
   );
 });
