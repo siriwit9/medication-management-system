@@ -141,7 +141,7 @@ window.SupabaseAdapter = (function () {
         else if (daysLeft <= orangeDays) bucket = 'orange';
         else if (daysLeft <= yellowDays) bucket = 'yellow';
 
-        buckets[bucket] += qty;
+        buckets[bucket] += 1;
 
         items.push({
           id: s.id,
