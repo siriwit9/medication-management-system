@@ -455,13 +455,15 @@ window.SupabaseAdapter = (function () {
 
   // ================= Requisitions =================
   function listRequisitions() {
-    return Promise.resolve(getClient().from('requisitions').select('*').order('created_at', { ascending: false })).then(function (res) {
+    return Promise.resolve(getClient().from('requisitions').select('*, from_loc:locations!from_location_id(name)').order('created_at', { ascending: false })).then(function (res) {
       if (res.error) throw res.error;
       return (res.data || []).map(function (r) {
         return {
           id: r.id, reqNumber: r.req_number, reqDate: r.req_date,
           requesterName: r.requester_name, approverName: r.approver_name,
           distributorName: r.distributor_name, receiverName: r.receiver_name,
+          fromLocationId: r.from_location_id,
+          fromLocationName: r.from_loc ? r.from_loc.name : '',
           status: r.status, note: r.note, createdAt: r.created_at
         };
       });
@@ -470,7 +472,7 @@ window.SupabaseAdapter = (function () {
 
   function getRequisition(id) {
     var sb = getClient();
-    return Promise.resolve(sb.from('requisitions').select('*, requisition_items(*, medicines(name, unit))').eq('id', id).single())
+    return Promise.resolve(sb.from('requisitions').select('*, from_loc:locations!from_location_id(name), requisition_items(*, medicines(name, unit))').eq('id', id).single())
       .then(function (res) {
         if (res.error) throw res.error;
         var r = res.data;
@@ -478,6 +480,8 @@ window.SupabaseAdapter = (function () {
           id: r.id, reqNumber: r.req_number, reqDate: r.req_date,
           requesterName: r.requester_name, approverName: r.approver_name,
           distributorName: r.distributor_name, receiverName: r.receiver_name,
+          fromLocationId: r.from_location_id,
+          fromLocationName: r.from_loc ? r.from_loc.name : '',
           status: r.status, note: r.note,
           items: (r.requisition_items || []).map(function (it) {
             return {
@@ -502,6 +506,7 @@ window.SupabaseAdapter = (function () {
     var user = window.Auth && window.Auth.getUser();
     var reqNum = req.reqNumber || ('REQ-' + Date.now().toString().slice(-6));
     var userId = (user && isValidUuid(user.id)) ? user.id : null;
+    var fromLocId = (req.fromLocationId && isValidUuid(req.fromLocationId)) ? req.fromLocationId : null;
 
     var mainRow = {
       req_number: reqNum,
@@ -510,6 +515,7 @@ window.SupabaseAdapter = (function () {
       approver_name: req.approverName || '',
       distributor_name: req.distributorName || '',
       receiver_name: req.receiverName || '',
+      from_location_id: fromLocId,
       status: req.status || 'draft',
       note: req.note || '',
       created_by: userId
@@ -537,15 +543,20 @@ window.SupabaseAdapter = (function () {
         });
         return sb.from('requisition_items').insert(itemRows);
       }).then(function () {
-        // หากสถานะเป็น 'approved' หรือ 'completed' ให้ทำการหักสต็อกตามจริงและบันทึกเคลื่อนไหว
+        // หากสถานะเป็น 'approved' หรือ 'completed' ให้ทำการหักสต็อกของคลังยาที่เลือกตามจริง
         if (req.status === 'approved' || req.status === 'completed') {
           var stockTasks = (req.items || []).map(function (it) {
             var qtyDeduct = Number(it.qtyApproved || 0);
             if (qtyDeduct <= 0) return Promise.resolve();
 
-            return sb.from('stock').select('*').eq('medicine_id', it.medicineId).order('qty', { ascending: false }).then(function (sRes) {
-              if (sRes.data && sRes.data.length > 0) {
-                var stockItem = sRes.data[0];
+            var q = sb.from('stock').select('*').eq('medicine_id', it.medicineId);
+            if (fromLocId) q = q.eq('location_id', fromLocId);
+            q = q.order('qty', { ascending: false });
+
+            return q.then(function (sRes) {
+              var stockList = sRes.data || [];
+              if (stockList.length > 0) {
+                var stockItem = stockList[0];
                 var newQty = Math.max(0, stockItem.qty - qtyDeduct);
                 return sb.from('stock').update({ qty: newQty }).eq('id', stockItem.id).then(function () {
                   return sb.from('movements').insert({

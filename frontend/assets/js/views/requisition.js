@@ -1,20 +1,35 @@
-/** ระบบใบเบิกยา: สร้าง/ดู/แก้ไข + Live Preview แบบ A4 + Drag & Drop + PDF แบบราชการ */
+/** ระบบใบเบิกยา: สร้าง/ดู/แก้ไข + เลือกคลังต้นทาง + Live Preview A4 + Drag & Drop + PDF ราชการ + หักสต็อกคลังที่เลือก */
 window.Views = window.Views || {};
 Views.requisition = function (view) {
-  var state = { reqs: [], meds: [], stockTotals: {} };
+  var state = { reqs: [], meds: [], locs: [], stockRows: [], stockTotals: {}, stockByLoc: {} };
 
   return Promise.all([
     API.call('listRequisitions'),
     API.call('listMedicines'),
+    API.call('listLocations'),
     API.call('exportRows', { kind: 'stock', filters: {} })
   ]).then(function (res) {
     state.reqs = res[0];
     state.meds = res[1];
-    // คำนวณยอดคงเหลือรวม
-    (res[2].rows || []).forEach(function (r) {
+    state.locs = res[2];
+    state.stockRows = res[3].rows || [];
+
+    // คำนวณยอดคงเหลือรวม และยอดแยกตามคลัง
+    state.stockTotals = {};
+    state.stockByLoc = {};
+    state.stockRows.forEach(function (r) {
       var name = r[0];
+      var locName = r[2];
+      var qty = Number(r[5] || 0);
       var med = state.meds.filter(function (m) { return m.name === name; })[0];
-      if (med) state.stockTotals[med.id] = (state.stockTotals[med.id] || 0) + Number(r[5] || 0);
+      var loc = state.locs.filter(function (l) { return l.name === locName; })[0];
+      if (med) {
+        state.stockTotals[med.id] = (state.stockTotals[med.id] || 0) + qty;
+        if (loc) {
+          state.stockByLoc[loc.id] = state.stockByLoc[loc.id] || {};
+          state.stockByLoc[loc.id][med.id] = (state.stockByLoc[loc.id][med.id] || 0) + qty;
+        }
+      }
     });
     renderList();
   });
@@ -27,10 +42,11 @@ Views.requisition = function (view) {
       '<button class="btn btn-primary" id="req-new"><span data-lucide="plus"></span> สร้างใบเบิกใหม่</button></div>' +
       '<div id="req-list">' +
       (state.reqs.length === 0 ? '<div class="card empty-state">ยังไม่มีใบเบิกยา</div>' :
-        '<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>วันที่</th><th>ผู้เบิก</th><th>สถานะ</th><th>จัดการ</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table><thead><tr><th>เลขที่</th><th>วันที่</th><th>เบิกจากคลัง</th><th>ผู้เบิก</th><th>สถานะ</th><th>จัดการ</th></tr></thead><tbody>' +
         state.reqs.map(function (r) {
           return '<tr><td><strong>' + U.escapeHtml(r.reqNumber) + '</strong></td>' +
             '<td>' + U.thaiDate(r.reqDate) + '</td>' +
+            '<td><span class="pill-tag tag-blue">' + U.escapeHtml(r.fromLocationName || 'คลังยาหลัก') + '</span></td>' +
             '<td>' + U.escapeHtml(r.requesterName || '-') + '</td>' +
             '<td><span class="pill-tag ' + (statusClass[r.status] || '') + '">' + (statusLabel[r.status] || r.status) + '</span></td>' +
             '<td><button class="btn btn-sm" data-view="' + r.id + '">ดู/แก้ไข</button> ' +
@@ -68,6 +84,22 @@ Views.requisition = function (view) {
     var isEdit = !!existing;
     var items = isEdit ? existing.items : [];
 
+    // หาคลังยาเริ่มต้น
+    var defaultLocId = '';
+    if (isEdit && existing.fromLocationId) {
+      defaultLocId = existing.fromLocationId;
+    } else if (state.locs.length) {
+      var defLoc = state.locs.filter(function (l) { return l.isReceivingDefault; })[0];
+      defaultLocId = defLoc ? defLoc.id : state.locs[0].id;
+    }
+
+    function getStockForLoc(locId, medId) {
+      if (locId && state.stockByLoc[locId]) {
+        return state.stockByLoc[locId][medId] || 0;
+      }
+      return state.stockTotals[medId] || 0;
+    }
+
     view.innerHTML =
       '<div class="page-head"><h1 class="page-title">' + (isEdit ? 'แก้ไขใบเบิก ' + U.escapeHtml(existing.reqNumber) : 'สร้างใบเบิกใหม่') + '</h1>' +
       '<button class="btn" id="req-back"><span data-lucide="arrow-left"></span> กลับ</button></div>' +
@@ -76,12 +108,18 @@ Views.requisition = function (view) {
       '<div class="field"><label>วันที่เบิก</label><input id="req-date" type="date" value="' + (isEdit ? existing.reqDate : U.todayISO()) + '" /></div>' +
       '<div class="field"><label>สถานะ</label><select id="req-status">' +
       '<option value="draft"' + (isEdit && existing.status === 'draft' ? ' selected' : '') + '>แบบร่าง</option>' +
-      '<option value="approved"' + (isEdit && existing.status === 'approved' ? ' selected' : '') + '>อนุมัติแล้ว</option>' +
-      '<option value="completed"' + (isEdit && existing.status === 'completed' ? ' selected' : '') + '>เสร็จสิ้น</option></select></div>' +
+      '<option value="approved"' + (isEdit && existing.status === 'approved' ? ' selected' : '') + '>อนุมัติแล้ว (ตัดสต็อกคลัง)</option>' +
+      '<option value="completed"' + (isEdit && existing.status === 'completed' ? ' selected' : '') + '>เสร็จสิ้น (ตัดสต็อกคลัง)</option></select></div>' +
       '<div class="field"><label>ผู้เบิก</label><input id="req-requester" value="' + U.escapeHtml(isEdit ? existing.requesterName : '') + '" placeholder="ชื่อ-สกุล ผู้เบิก" /></div>' +
       '<div class="field"><label>ผู้อนุมัติจ่าย</label><input id="req-approver" value="' + U.escapeHtml(isEdit ? existing.approverName : '') + '" placeholder="ชื่อ-สกุล ผู้อนุมัติ" /></div>' +
       '<div class="field"><label>ผู้จ่าย</label><input id="req-distributor" value="' + U.escapeHtml(isEdit ? existing.distributorName : '') + '" placeholder="ชื่อ-สกุล ผู้จ่าย" /></div>' +
       '<div class="field"><label>ผู้รับของ</label><input id="req-receiver" value="' + U.escapeHtml(isEdit ? existing.receiverName : '') + '" placeholder="ชื่อ-สกุล ผู้รับของ" /></div>' +
+      '<div class="field" style="grid-column: 1 / -1"><label>เบิกจากคลัง/สถานที่ *</label><select id="req-location" style="border-color:var(--primary);font-weight:600">' +
+      '<option value="">- เลือกคลังยาต้นทาง -</option>' +
+      state.locs.map(function (l) {
+        var sel = (l.id === defaultLocId);
+        return '<option value="' + l.id + '"' + (sel ? ' selected' : '') + '>' + U.escapeHtml(l.name) + '</option>';
+      }).join('') + '</select></div>' +
       '</div>' +
       '<div class="field"><label>หมายเหตุ</label><input id="req-note" value="' + U.escapeHtml(isEdit ? (existing.note || '') : '') + '" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" /></div>' +
       '</div>' +
@@ -108,7 +146,8 @@ Views.requisition = function (view) {
 
     // state สำหรับฟอร์ม
     var formItems = items.map(function (it) {
-      var stock = state.stockTotals[it.medicineId] || 0;
+      var currentLoc = view.querySelector('#req-location') ? view.querySelector('#req-location').value : defaultLocId;
+      var stock = getStockForLoc(currentLoc, it.medicineId);
       var requested = Number(it.qtyRequested || 1);
       var approved = Number(it.qtyApproved || requested);
       var remaining = Math.max(0, stock - approved);
@@ -127,20 +166,22 @@ Views.requisition = function (view) {
     searchInput.addEventListener('input', U.debounce(function () {
       var q = searchInput.value.trim().toLowerCase();
       if (!q) { suggestBox.innerHTML = ''; return; }
+      var currentLoc = view.querySelector('#req-location').value;
       var matches = state.meds.filter(function (m) {
         return m.name.toLowerCase().indexOf(q) >= 0 || String(m.barcode).indexOf(q) >= 0;
       }).slice(0, 8);
       suggestBox.innerHTML = matches.map(function (m, i) {
+        var stock = getStockForLoc(currentLoc, m.id);
         return '<div class="list-item card-clickable" data-mi="' + i + '"><div class="grow"><div class="title">' +
           U.escapeHtml(m.name) + '</div><div class="sub">' + U.escapeHtml(m.unit || '') +
-          ' | คงเหลือ: ' + (state.stockTotals[m.id] || 0) + '</div></div></div>';
+          ' | คงเหลือในคลัง: ' + stock + '</div></div></div>';
       }).join('');
       suggestBox.querySelectorAll('[data-mi]').forEach(function (el) {
         el.onclick = function () {
           var m = matches[Number(el.getAttribute('data-mi'))];
           var dup = formItems.filter(function (x) { return x.medicineId === m.id; });
           if (dup.length) { Toast.error('มียานี้ในรายการแล้ว'); return; }
-          var stock = state.stockTotals[m.id] || 0;
+          var stock = getStockForLoc(currentLoc, m.id);
           formItems.push({
             medicineId: m.id, medicineName: m.name, unit: m.unit || '',
             qtyRequested: 1, qtyApproved: 1,
@@ -154,6 +195,17 @@ Views.requisition = function (view) {
       });
     }, 200));
 
+    // เมื่อเปลี่ยนคลังต้นทาง ให้คำนวณคงเหลือใหม่ตามคลังที่เลือก
+    view.querySelector('#req-location').addEventListener('change', function () {
+      var newLocId = this.value;
+      formItems.forEach(function (it) {
+        it.initialStock = getStockForLoc(newLocId, it.medicineId);
+        it.qtyRemaining = Math.max(0, it.initialStock - Number(it.qtyApproved || 0));
+      });
+      renderItemsTable();
+      updatePreview();
+    });
+
     // Drag & Drop state
     var dragIdx = null;
 
@@ -165,7 +217,7 @@ Views.requisition = function (view) {
           return '<tr class="req-item-row" data-row="' + idx + '" draggable="true"><td class="drag-grip"><span data-lucide="grip-vertical"></span></td><td>' + (idx + 1) + '</td><td>' + U.escapeHtml(it.medicineName) + '</td><td>' + U.escapeHtml(it.unit) + '</td>' +
             '<td><input type="number" min="0" value="' + it.qtyRequested + '" data-field="qtyRequested" data-idx="' + idx + '" style="width:70px" /></td>' +
             '<td><input type="number" min="0" value="' + it.qtyApproved + '" data-field="qtyApproved" data-idx="' + idx + '" style="width:70px" /></td>' +
-            '<td data-rem-idx="' + idx + '"><strong>' + it.qtyRemaining + '</strong></td>' +
+            '<td data-rem-idx="' + idx + '"><strong>' + it.qtyRemaining + '</strong> <small class="muted">(คลังเดิม ' + it.initialStock + ')</small></td>' +
             '<td><input value="' + U.escapeHtml(it.note) + '" data-field="note" data-idx="' + idx + '" style="width:100px" placeholder="-" /></td>' +
             '<td><button class="btn btn-sm btn-danger" data-rm="' + idx + '"><span data-lucide="x"></span></button></td></tr>';
         }).join('') +
@@ -192,7 +244,7 @@ Views.requisition = function (view) {
           formItems[idx].qtyRemaining = Math.max(0, stock - approved);
 
           var remTd = box.querySelector('[data-rem-idx="' + idx + '"]');
-          if (remTd) remTd.innerHTML = '<strong>' + formItems[idx].qtyRemaining + '</strong>';
+          if (remTd) remTd.innerHTML = '<strong>' + formItems[idx].qtyRemaining + '</strong> <small class="muted">(คลังเดิม ' + stock + ')</small>';
 
           updatePreview();
         };
@@ -253,6 +305,7 @@ Views.requisition = function (view) {
     function updatePreview() {
       var paper = view.querySelector('#req-preview-paper');
       if (!paper || !previewVisible) return;
+      var settings = App.getSettingsCache() || {};
       var hospitalName = (settings && settings.hospitalName) || 'โรงพยาบาลส่งเสริมสุขภาพประจำตำบล';
       var dateVal = view.querySelector('#req-date').value || U.todayISO();
       var dateParts = dateVal.split('-');
@@ -261,6 +314,10 @@ Views.requisition = function (view) {
       var dateStr = dateParts.length === 3
         ? 'วันที่ ' + Number(dateParts[2]) + ' เดือน ' + (thaiMonths[Number(dateParts[1])] || '') + ' พ.ศ. ' + (Number(dateParts[0]) + 543)
         : dateVal;
+
+      var currentLocId = view.querySelector('#req-location').value;
+      var selectedLoc = state.locs.filter(function (l) { return l.id === currentLocId; })[0];
+      var locText = selectedLoc ? selectedLoc.name : 'คลังยา';
 
       var logoHtml = '';
       var storedLogo = localStorage.getItem('hospitalLogo');
@@ -286,7 +343,7 @@ Views.requisition = function (view) {
         '<p style="text-align:center;margin:4px 0">' + dateStr + '</p>' +
         '<p style="margin:8px 0">เรื่อง  ขอเบิกยา</p>' +
         '<p style="margin:4px 0">เรียน  ผู้อำนวยการ' + U.escapeHtml(hospitalName) + '</p>' +
-        '<p style="margin:8px 0;text-indent:2em">ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจากคลังยา ของ ' + U.escapeHtml(hospitalName) + ' ตามรายการดังนี้</p>' +
+        '<p style="margin:8px 0;text-indent:2em">ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจาก <b>' + U.escapeHtml(locText) + '</b> ของ ' + U.escapeHtml(hospitalName) + ' ตามรายการดังนี้</p>' +
         '<table><thead><tr><th>ลำดับ</th><th>รายการ</th><th>หน่วยนับ</th><th>จำนวนขอเบิก</th><th>จำนวนอนุมัติ</th><th>คงเหลือ</th><th>หมายเหตุ</th></tr></thead><tbody>' +
         (rows || '<tr><td colspan="7" style="text-align:center;color:#999">ยังไม่มีรายการ</td></tr>') +
         '</tbody></table>' +
@@ -303,7 +360,7 @@ Views.requisition = function (view) {
     }
 
     // Update preview when header fields change
-    ['req-date', 'req-requester', 'req-approver', 'req-distributor', 'req-receiver', 'req-note'].forEach(function (id) {
+    ['req-date', 'req-requester', 'req-approver', 'req-distributor', 'req-receiver', 'req-location', 'req-note'].forEach(function (id) {
       var el = view.querySelector('#' + id);
       if (el) el.addEventListener('input', function () { updatePreview(); });
     });
@@ -318,6 +375,9 @@ Views.requisition = function (view) {
 
     function doSave() {
       if (!formItems.length) { Toast.error('ต้องมีรายการยาอย่างน้อย 1 รายการ'); return; }
+      var locSelect = view.querySelector('#req-location');
+      if (!locSelect.value) { Toast.error('กรุณาเลือกคลังยาต้นทางที่ต้องการเบิก'); return; }
+
       var btn = view.querySelector('#req-save'); btn.disabled = true;
       var payload = {
         id: isEdit ? existing.id : undefined,
@@ -326,6 +386,7 @@ Views.requisition = function (view) {
         approverName: view.querySelector('#req-approver').value.trim(),
         distributorName: view.querySelector('#req-distributor').value.trim(),
         receiverName: view.querySelector('#req-receiver').value.trim(),
+        fromLocationId: locSelect.value,
         status: view.querySelector('#req-status').value,
         note: view.querySelector('#req-note').value.trim(),
         items: formItems.map(function (it) {
@@ -346,6 +407,7 @@ Views.requisition = function (view) {
     API.call('getRequisition', { id: id }).then(function (req) {
       var settings = App.getSettingsCache() || {};
       var hospitalName = settings.hospitalName || 'โรงพยาบาลส่งเสริมสุขภาพประจำตำบล';
+      var locText = req.fromLocationName || 'คลังยา';
 
       if (!window.jspdf || !window.jspdf.jsPDF) { Toast.error('โหลดไลบรารี PDF ไม่สำเร็จ'); return; }
       var jsPDF = window.jspdf.jsPDF;
@@ -390,7 +452,7 @@ Views.requisition = function (view) {
 
       doc.text('เรื่อง  ขอ เบิก ยา', 20, y); y += 7;
       doc.text('เรียน  ผู้อำนวยการ' + hospitalName, 20, y); y += 7;
-      doc.text('     ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจากคลังยา ของ ' + hospitalName + ' ตามรายการดังนี้', 20, y); y += 6;
+      doc.text('     ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจาก ' + locText + ' ของ ' + hospitalName + ' ตามรายการดังนี้', 20, y); y += 6;
 
       // ตาราง
       var tableRows = req.items.map(function (it, idx) {
