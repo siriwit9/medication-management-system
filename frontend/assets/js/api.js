@@ -1,6 +1,5 @@
 /**
- * ตัวเรียก Apps Script Web App
- * ใช้ POST แบบ text/plain เพื่อเลี่ยง CORS preflight, แนบ token ใน body
+ * API Wrapper — รองรับทั้ง Supabase (< 100ms) และ Google Apps Script
  */
 window.API = (function () {
   function url() {
@@ -13,6 +12,58 @@ window.API = (function () {
 
   function call(action, params) {
     params = params || {};
+
+    var provider = window.APP_CONFIG && window.APP_CONFIG.DATA_PROVIDER;
+    var hasSb = window.SupabaseAdapter && window.SupabaseAdapter.isConfigured();
+
+    if (provider === 'supabase' && hasSb) {
+      return callSupabase(action, params);
+    }
+
+    return callAppsScript(action, params);
+  }
+
+  function callSupabase(action, params) {
+    var sb = window.SupabaseAdapter;
+    switch (action) {
+      case 'login': return sb.login(params.username, params.password);
+      case 'listUsers': return sb.listUsers();
+      case 'saveUser': return sb.saveUser(params);
+      case 'deleteUser': return sb.deleteUser(params);
+      case 'resetPassword': return sb.resetPassword(params);
+      case 'changeMyPassword': return sb.changeMyPassword(params);
+      case 'getSettings': return sb.getSettings();
+      case 'saveSettings': return sb.saveSettings(params.settings);
+      case 'getDashboard': return sb.getDashboard(params);
+      case 'search': return sb.search(params);
+      case 'listLocations': return sb.listLocations();
+      case 'saveLocation': return sb.saveLocation(params.location);
+      case 'listMedicines': return sb.listMedicines();
+      case 'saveMedicine': return sb.saveMedicine(params.medicine);
+      case 'listStockByLocation': return sb.listStockByLocation(params);
+      case 'exportRows': return sb.exportRows(params.kind);
+      case 'receive':
+      case 'receiveStock': return sb.receiveStock(params);
+      case 'dispense': return sb.dispense(params);
+      case 'adjustCount': return sb.adjustCount(params);
+      case 'transfer':
+      case 'transferStock': return sb.transferStock(params);
+      case 'listMovements': return sb.listMovements();
+      case 'listRequisitions': return sb.listRequisitions();
+      case 'getRequisition': return sb.getRequisition(params.id);
+      case 'saveRequisition': return sb.saveRequisition(params);
+      case 'deleteRequisition': return sb.deleteRequisition(params.id);
+      case 'listReceipts': return sb.listReceipts();
+      case 'getReceipt': return sb.getReceipt(params.id);
+      case 'saveReceipt': return sb.saveReceipt(params.receipt);
+      case 'deleteReceipt': return sb.deleteReceipt(params.id);
+      case 'testNotify': return Promise.resolve(true);
+      default:
+        return callAppsScript(action, params);
+    }
+  }
+
+  function callAppsScript(action, params) {
     var body = Object.assign({ action: action }, params);
     var token = window.Auth && window.Auth.getToken && window.Auth.getToken();
     if (token) body.token = token;
@@ -30,7 +81,8 @@ window.API = (function () {
       if (!json.ok) {
         var err = new Error(json.error || 'เกิดข้อผิดพลาด');
         err.code = json.error;
-        if (json.error === 'UNAUTHORIZED') {
+        // กรณีใช้ Supabase หากคำขอสำรองไปยัง Apps Script คืนค่า UNAUTHORIZED จะไม่ลบ session ในเครื่อง
+        if (json.error === 'UNAUTHORIZED' && window.APP_CONFIG.DATA_PROVIDER === 'apps_script') {
           window.Auth && window.Auth.onUnauthorized && window.Auth.onUnauthorized();
         }
         throw err;

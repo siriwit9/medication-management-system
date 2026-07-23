@@ -238,9 +238,9 @@ Views.requisition = function (view) {
       doc.setFontSize(11);
       doc.text(dateStr, 105, y, { align: 'center' }); y += 10;
 
-      doc.text('เรื่อง ขอเบิกยา', 20, y); y += 7;
-      doc.text('เรียน ผู้อำนวยการ' + hospitalName, 20, y); y += 7;
-      doc.text('     ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจากคลังยา ตามรายการดังนี้', 20, y); y += 5;
+      doc.text('เรื่อง  ขอ เบิก ยา', 20, y); y += 7;
+      doc.text('เรียน  ผู้อำนวยการ' + hospitalName, 20, y); y += 7;
+      doc.text('     ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจากคลังยา ของ ' + hospitalName + ' ตามรายการดังนี้', 20, y); y += 6;
 
       // ตาราง
       var tableRows = req.items.map(function (it, idx) {
