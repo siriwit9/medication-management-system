@@ -139,7 +139,10 @@ function renderMedicines(content) {
     var meds = res[0], locs = res[1];
     content.innerHTML =
       '<div class="page-head"><input id="med-filter" placeholder="ค้นหายา..." style="max-width:280px" />' +
-      '<button class="btn btn-primary" id="add-med"><span data-lucide="plus"></span> เพิ่มยา</button></div>' +
+      '<div class="row" style="gap:8px">' +
+      '<button class="btn btn-primary" id="add-med"><span data-lucide="plus"></span> เพิ่มยา</button>' +
+      '<button class="btn" id="import-gsheet"><span data-lucide="download"></span> ดึงยา 140 รายการจาก Google Sheets</button>' +
+      '</div></div>' +
       '<div id="med-list"></div>';
     var listEl = content.querySelector('#med-list');
 
@@ -152,9 +155,13 @@ function renderMedicines(content) {
           '<div class="sub">บาร์โค้ด: ' + U.escapeHtml(m.barcode || '-') + ' · ขั้นต่ำ ' + m.minStock + ' ' + U.escapeHtml(m.unit || '') + '</div></div>' +
           '<button class="btn btn-sm" data-edit="' + m.id + '">แก้ไข</button> ' +
           '<button class="btn btn-sm btn-danger" data-del="' + m.id + '">ลบ</button></div>';
-      }).join('') : '<div class="card empty-state">ไม่พบรายการยา</div>';
+      }).join('') : '<div class="card empty-state"><p>ยังไม่มีรายการยาในคลัง</p><button class="btn btn-primary mt-16" id="empty-import-btn"><span data-lucide="download"></span> ดึงยา 140 รายการจาก Google Sheets ทันที</button></div>';
       U.refreshIcons();
-      // โหลดรูปจาก Drive
+
+      if (listEl.querySelector('#empty-import-btn')) {
+        listEl.querySelector('#empty-import-btn').onclick = function () { doImportGS(); };
+      }
+
       listEl.querySelectorAll('[data-img]').forEach(function (img) {
         API.call('getMedicineImage', { fileId: img.getAttribute('data-img') }).then(function (d) { img.src = d.dataUrl; }).catch(function () {});
       });
@@ -173,8 +180,35 @@ function renderMedicines(content) {
       });
     }
 
+    function doImportGS() {
+      Modal.confirm({
+        title: 'ยืนยันนำเข้ายาจาก Google Sheets',
+        message: 'ต้องการดึงรายการยา 140 รายการ + 4 สถานที่ + สต็อก จาก Google Sheets เข้าสู่ระบบใช่หรือไม่?'
+      }).then(function (ok) {
+        if (!ok) return;
+        Toast.success('กำลังนำเข้าข้อมูลจาก Google Sheets...');
+        API.call('importGoogleSheetSeed').then(function (res) {
+          Toast.success('นำเข้ายา ' + (res.count || 140) + ' รายการสำเร็จเรียบร้อย!');
+          renderMedicines(content);
+        }).catch(function (err) {
+          Toast.error(err.message || 'ไม่สามารถนำเข้าโดยตรงได้ กรุณารัน SQL Migration 004 บน Supabase');
+          showSqlGuideModal();
+        });
+      });
+    }
+
+    function showSqlGuideModal() {
+      Modal.open({
+        title: 'คำแนะนำการนำเข้าข้อมูล (SQL 004)',
+        body: '<p>เนื่องจาก Supabase มีการเปิด Row-Level Security กรุณานำโค้ดไฟล์ <code>supabase/migrations/004_seed_google_sheets_data.sql</code> ไปวางและกด Run ใน <b>SQL Editor บน Supabase Dashboard</b> เพียง 1 ครั้งเพื่อนำเข้ายา 140 รายการพร้อมปรับสิทธิ์</p>',
+        footer: '<button class="btn btn-primary" onclick="this.closest(\'.modal-backdrop\').remove()">ตกลง</button>',
+        wide: true
+      });
+    }
+
     content.querySelector('#med-filter').addEventListener('input', U.debounce(function (e) { draw(e.target.value.trim().toLowerCase()); }, 250));
     content.querySelector('#add-med').onclick = function () { medForm(null, locs, function () { renderMedicines(content); }); };
+    content.querySelector('#import-gsheet').onclick = function () { doImportGS(); };
     draw('');
   });
 }

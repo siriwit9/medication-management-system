@@ -54,11 +54,11 @@ ALTER TABLE receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE receipt_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jhcis_imports ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "receipts_read" ON receipts FOR SELECT TO authenticated USING (true);
-CREATE POLICY "receipts_write" ON receipts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "receipts_read" ON receipts FOR SELECT TO public USING (true);
+CREATE POLICY "receipts_write" ON receipts FOR ALL TO public USING (true) WITH CHECK (true);
 
-CREATE POLICY "receipt_items_read" ON receipt_items FOR SELECT TO authenticated USING (true);
-CREATE POLICY "receipt_items_write" ON receipt_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "receipt_items_read" ON receipt_items FOR SELECT TO public USING (true);
+CREATE POLICY "receipt_items_write" ON receipt_items FOR ALL TO public USING (true) WITH CHECK (true);
 
-CREATE POLICY "jhcis_imports_read" ON jhcis_imports FOR SELECT TO authenticated USING (true);
-CREATE POLICY "jhcis_imports_write" ON jhcis_imports FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "jhcis_imports_read" ON jhcis_imports FOR SELECT TO public USING (true);
+CREATE POLICY "jhcis_imports_write" ON jhcis_imports FOR ALL TO public USING (true) WITH CHECK (true);

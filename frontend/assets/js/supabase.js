@@ -634,9 +634,38 @@ window.SupabaseAdapter = (function () {
   }
 
   function deleteReceipt(id) {
-    return Promise.resolve(getClient().from('receipts').delete().eq('id', id)).then(function (res) {
+    return Promise.resolve(getClient().from('requisitions').delete().eq('id', id)).then(function (res) {
       if (res.error) throw res.error;
       return true;
+    });
+  }
+
+  function importGoogleSheetSeed() {
+    var seed = window.GOOGLE_SHEET_SEED;
+    if (!seed) return Promise.reject(new Error('ไม่พบข้อมูล Seed จาก Google Sheet'));
+    var sb = getClient();
+
+    var locRows = seed.locations.map(function (l) {
+      return { id: l.id, name: l.name, icon: l.icon, color: l.color, is_receiving_default: l.isReceivingDefault, sort_order: l.sortOrder };
+    });
+
+    var medRows = seed.medicines.map(function (m) {
+      return { id: m.id, name: m.name, barcode: m.barcode, unit: m.unit, min_stock: m.minStock, require_lot: m.requireLot, default_location_id: m.defaultLocationId || null };
+    });
+
+    var stockRows = seed.stock.map(function (s) {
+      return { id: s.id, medicine_id: s.medicineId, location_id: s.locationId, lot: s.lot, expiry_date: s.expiryDate || null, qty: s.qty };
+    });
+
+    return Promise.resolve(sb.from('locations').upsert(locRows)).then(function (res) {
+      if (res.error) throw res.error;
+      return sb.from('medicines').upsert(medRows);
+    }).then(function (res) {
+      if (res.error) throw res.error;
+      return sb.from('stock').upsert(stockRows);
+    }).then(function (res) {
+      if (res.error) throw res.error;
+      return { count: medRows.length };
     });
   }
 
@@ -649,6 +678,7 @@ window.SupabaseAdapter = (function () {
     exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
     transferStock: transferStock, listMovements: listMovements,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
-    listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt
+    listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,
+    importGoogleSheetSeed: importGoogleSheetSeed
   };
 })();

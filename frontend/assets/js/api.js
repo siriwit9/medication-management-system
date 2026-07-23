@@ -62,6 +62,7 @@ window.API = (function () {
       case 'getReceipt': return sb.getReceipt(params.id);
       case 'saveReceipt': return sb.saveReceipt(params.receipt);
       case 'deleteReceipt': return sb.deleteReceipt(params.id);
+      case 'importGoogleSheetSeed': return sb.importGoogleSheetSeed();
       case 'testNotify': return Promise.resolve(true);
       default:
         var scriptUrl = url();
