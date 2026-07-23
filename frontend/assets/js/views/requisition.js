@@ -108,9 +108,15 @@ Views.requisition = function (view) {
 
     // state สำหรับฟอร์ม
     var formItems = items.map(function (it) {
-      return { medicineId: it.medicineId, medicineName: it.medicineName, unit: it.unit,
-        qtyRequested: it.qtyRequested, qtyApproved: it.qtyApproved,
-        qtyRemaining: state.stockTotals[it.medicineId] || it.qtyRemaining, note: it.note };
+      var stock = state.stockTotals[it.medicineId] || 0;
+      var requested = Number(it.qtyRequested || 1);
+      var approved = Number(it.qtyApproved || requested);
+      var remaining = Math.max(0, stock - approved);
+      return {
+        medicineId: it.medicineId, medicineName: it.medicineName, unit: it.unit,
+        qtyRequested: requested, qtyApproved: approved,
+        qtyRemaining: remaining, initialStock: stock, note: it.note || ''
+      };
     });
 
     renderItemsTable();
@@ -134,10 +140,11 @@ Views.requisition = function (view) {
           var m = matches[Number(el.getAttribute('data-mi'))];
           var dup = formItems.filter(function (x) { return x.medicineId === m.id; });
           if (dup.length) { Toast.error('มียานี้ในรายการแล้ว'); return; }
+          var stock = state.stockTotals[m.id] || 0;
           formItems.push({
             medicineId: m.id, medicineName: m.name, unit: m.unit || '',
             qtyRequested: 1, qtyApproved: 1,
-            qtyRemaining: state.stockTotals[m.id] || 0, note: ''
+            qtyRemaining: Math.max(0, stock - 1), initialStock: stock, note: ''
           });
           suggestBox.innerHTML = '';
           searchInput.value = '';
@@ -153,12 +160,12 @@ Views.requisition = function (view) {
     function renderItemsTable() {
       var box = view.querySelector('#req-items-list');
       if (!formItems.length) { box.innerHTML = '<p class="muted">ยังไม่มีรายการ — ค้นหายาด้านบนเพื่อเพิ่ม</p>'; return; }
-      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th style="width:30px"></th><th>#</th><th>รายการ</th><th>หน่วย</th><th>ขอเบิก</th><th>อนุมัติ</th><th>คงเหลือ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>' +
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th style="width:30px"></th><th>#</th><th>รายการ</th><th>หน่วย</th><th>ขอเบิก</th><th>อนุมัติ</th><th>คงเหลือหลังเบิก</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>' +
         formItems.map(function (it, idx) {
           return '<tr class="req-item-row" data-row="' + idx + '" draggable="true"><td class="drag-grip"><span data-lucide="grip-vertical"></span></td><td>' + (idx + 1) + '</td><td>' + U.escapeHtml(it.medicineName) + '</td><td>' + U.escapeHtml(it.unit) + '</td>' +
             '<td><input type="number" min="0" value="' + it.qtyRequested + '" data-field="qtyRequested" data-idx="' + idx + '" style="width:70px" /></td>' +
             '<td><input type="number" min="0" value="' + it.qtyApproved + '" data-field="qtyApproved" data-idx="' + idx + '" style="width:70px" /></td>' +
-            '<td>' + it.qtyRemaining + '</td>' +
+            '<td data-rem-idx="' + idx + '"><strong>' + it.qtyRemaining + '</strong></td>' +
             '<td><input value="' + U.escapeHtml(it.note) + '" data-field="note" data-idx="' + idx + '" style="width:100px" placeholder="-" /></td>' +
             '<td><button class="btn btn-sm btn-danger" data-rm="' + idx + '"><span data-lucide="x"></span></button></td></tr>';
         }).join('') +
@@ -171,7 +178,22 @@ Views.requisition = function (view) {
         inp.onchange = function () {
           var idx = Number(inp.getAttribute('data-idx'));
           var field = inp.getAttribute('data-field');
-          formItems[idx][field] = field === 'note' ? inp.value : Number(inp.value);
+          var val = field === 'note' ? inp.value : Number(inp.value);
+          formItems[idx][field] = val;
+
+          if (field === 'qtyRequested') {
+            formItems[idx].qtyApproved = val;
+            var appInp = box.querySelector('[data-field="qtyApproved"][data-idx="' + idx + '"]');
+            if (appInp) appInp.value = val;
+          }
+
+          var stock = formItems[idx].initialStock || 0;
+          var approved = Number(formItems[idx].qtyApproved || 0);
+          formItems[idx].qtyRemaining = Math.max(0, stock - approved);
+
+          var remTd = box.querySelector('[data-rem-idx="' + idx + '"]');
+          if (remTd) remTd.innerHTML = '<strong>' + formItems[idx].qtyRemaining + '</strong>';
+
           updatePreview();
         };
       });
@@ -307,7 +329,7 @@ Views.requisition = function (view) {
         status: view.querySelector('#req-status').value,
         note: view.querySelector('#req-note').value.trim(),
         items: formItems.map(function (it) {
-          return { medicineId: it.medicineId, qtyRequested: it.qtyRequested, qtyApproved: it.qtyApproved, note: it.note || '' };
+          return { medicineId: it.medicineId, qtyRequested: it.qtyRequested, qtyApproved: it.qtyApproved, qtyRemaining: it.qtyRemaining, note: it.note || '' };
         })
       };
       API.call('saveRequisition', { requisition: payload }).then(function (r) {

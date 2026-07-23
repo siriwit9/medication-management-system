@@ -492,22 +492,27 @@ window.SupabaseAdapter = (function () {
       });
   }
 
+  function isValidUuid(str) {
+    return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  }
+
   function saveRequisition(payload) {
     var req = payload.requisition;
     var sb = getClient();
     var user = window.Auth && window.Auth.getUser();
     var reqNum = req.reqNumber || ('REQ-' + Date.now().toString().slice(-6));
+    var userId = (user && isValidUuid(user.id)) ? user.id : null;
 
     var mainRow = {
       req_number: reqNum,
-      req_date: req.reqDate,
+      req_date: req.reqDate || U.todayISO(),
       requester_name: req.requesterName || '',
       approver_name: req.approverName || '',
       distributor_name: req.distributorName || '',
       receiver_name: req.receiverName || '',
       status: req.status || 'draft',
       note: req.note || '',
-      created_by: user ? user.id : null
+      created_by: userId
     };
 
     var query = req.id
@@ -526,10 +531,39 @@ window.SupabaseAdapter = (function () {
             medicine_id: it.medicineId,
             qty_requested: Number(it.qtyRequested || 0),
             qty_approved: Number(it.qtyApproved || 0),
+            qty_remaining: Number(it.qtyRemaining || 0),
             note: it.note || ''
           };
         });
         return sb.from('requisition_items').insert(itemRows);
+      }).then(function () {
+        // หากสถานะเป็น 'approved' หรือ 'completed' ให้ทำการหักสต็อกตามจริงและบันทึกเคลื่อนไหว
+        if (req.status === 'approved' || req.status === 'completed') {
+          var stockTasks = (req.items || []).map(function (it) {
+            var qtyDeduct = Number(it.qtyApproved || 0);
+            if (qtyDeduct <= 0) return Promise.resolve();
+
+            return sb.from('stock').select('*').eq('medicine_id', it.medicineId).order('qty', { ascending: false }).then(function (sRes) {
+              if (sRes.data && sRes.data.length > 0) {
+                var stockItem = sRes.data[0];
+                var newQty = Math.max(0, stockItem.qty - qtyDeduct);
+                return sb.from('stock').update({ qty: newQty }).eq('id', stockItem.id).then(function () {
+                  return sb.from('movements').insert({
+                    type: 'dispense',
+                    medicine_id: it.medicineId,
+                    lot: stockItem.lot || '',
+                    expiry_date: stockItem.expiry_date || null,
+                    from_location_id: stockItem.location_id,
+                    qty: qtyDeduct,
+                    reason: 'จ่ายยาตามใบเบิกเลขที่ ' + reqNum,
+                    user_id: userId
+                  });
+                });
+              }
+            });
+          });
+          return Promise.all(stockTasks);
+        }
       }).then(function () {
         return savedReq;
       });
