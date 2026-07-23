@@ -123,6 +123,9 @@ def main():
 
     sql_lines.append("\n-- 4) Insert Stock")
     for s in stock:
+        qty = int(s.get('qty') or 0)
+        if qty <= 0:
+            continue
         s_id = escape_sql(s.get('id'))
         med_id = escape_sql(s.get('medicineId'))
         loc_id = escape_sql(s.get('locationId'))

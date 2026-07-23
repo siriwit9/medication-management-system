@@ -125,6 +125,15 @@ window.SupabaseAdapter = (function () {
 
       rawStock.forEach(function (s) {
         if (locId && s.location_id !== locId) return;
+        var qty = Number(s.qty || 0);
+        var medName = s.medicines ? s.medicines.name : '-';
+        var medId = s.medicine_id;
+        medTotals[medId] = (medTotals[medId] || { name: medName, minStock: (s.medicines ? s.medicines.min_stock : 0), qty: 0 });
+        medTotals[medId].qty += qty;
+
+        // ไม่นำรายการที่หมดสต็อก (qty <= 0) มาแสดงในตารางใกล้หมดอายุ
+        if (qty <= 0) return;
+
         var exp = s.expiry_date ? new Date(s.expiry_date) : null;
         var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
         var bucket = 'green';
@@ -132,12 +141,7 @@ window.SupabaseAdapter = (function () {
         else if (daysLeft <= orangeDays) bucket = 'orange';
         else if (daysLeft <= yellowDays) bucket = 'yellow';
 
-        buckets[bucket] += (s.qty || 0);
-
-        var medName = s.medicines ? s.medicines.name : '-';
-        var medId = s.medicine_id;
-        medTotals[medId] = (medTotals[medId] || { name: medName, minStock: (s.medicines ? s.medicines.min_stock : 0), qty: 0 });
-        medTotals[medId].qty += (s.qty || 0);
+        buckets[bucket] += qty;
 
         items.push({
           id: s.id,
@@ -148,7 +152,7 @@ window.SupabaseAdapter = (function () {
           expiryDate: s.expiry_date,
           daysLeft: daysLeft,
           bucket: bucket,
-          qty: s.qty || 0,
+          qty: qty,
           unit: s.medicines ? s.medicines.unit : ''
         });
       });
@@ -162,7 +166,7 @@ window.SupabaseAdapter = (function () {
       });
 
       var perLocation = locations.map(function (loc) {
-        var locStock = rawStock.filter(function (s) { return s.location_id === loc.id; });
+        var locStock = rawStock.filter(function (s) { return s.location_id === loc.id && (s.qty || 0) > 0; });
         var locBuckets = { red: 0, orange: 0, yellow: 0, green: 0 };
         var totalQty = 0;
         locStock.forEach(function (s) {
@@ -191,7 +195,7 @@ window.SupabaseAdapter = (function () {
 
   function search(params) {
     var q = (params.query || '').toLowerCase();
-    return Promise.resolve(getClient().from('stock').select('*, medicines(*), locations(*)')).then(function (res) {
+    return Promise.resolve(getClient().from('stock').select('*, medicines(*), locations(*)').gt('qty', 0)).then(function (res) {
       if (res.error) throw res.error;
       var raw = res.data || [];
       var filtered = raw.filter(function (s) {
@@ -221,8 +225,8 @@ window.SupabaseAdapter = (function () {
       if (!locs.length) {
         // seed สถานที่เริ่มต้นถ้ายังไม่มี
         var defaultLocs = [
-          { name: 'คลังหลัก', icon: 'package', color: '#2563eb', is_receiving_default: true, sort_order: 1 },
-          { name: 'ห้องจ่ายยา', icon: 'pill', color: '#16a34a', is_receiving_default: false, sort_order: 2 }
+          { name: 'คลังใน', icon: 'package', color: '#2563eb', is_receiving_default: true, sort_order: 1 },
+          { name: 'คลังนอก (ห้องจ่ายยา)', icon: 'pill', color: '#16a34a', is_receiving_default: false, sort_order: 2 }
         ];
         return getClient().from('locations').insert(defaultLocs).select().then(function (inserted) {
           return inserted.data || defaultLocs;
@@ -273,7 +277,7 @@ window.SupabaseAdapter = (function () {
   // ================= Stock & Movements =================
   function listStockByLocation(params) {
     var locId = params.locationId;
-    var query = getClient().from('stock').select('*, medicines(*), locations(*)');
+    var query = getClient().from('stock').select('*, medicines(*), locations(*)').gt('qty', 0);
     if (locId) query = query.eq('location_id', locId);
     var now = new Date();
     return Promise.resolve(query).then(function (res) {
@@ -293,7 +297,7 @@ window.SupabaseAdapter = (function () {
   function exportRows(kind) {
     var sb = getClient();
     if (kind === 'stock') {
-      return Promise.resolve(sb.from('stock').select('*, medicines(name, unit, barcode), locations(name)')).then(function (res) {
+      return Promise.resolve(sb.from('stock').select('*, medicines(name, unit, barcode), locations(name)').gt('qty', 0)).then(function (res) {
         if (res.error) throw res.error;
         var rows = (res.data || []).map(function (s) {
           return [
@@ -316,32 +320,52 @@ window.SupabaseAdapter = (function () {
     var sb = getClient();
     var p = params.payload || params;
     var user = window.Auth && window.Auth.getUser();
-    var userId = user ? user.id : null;
+    var userId = (user && isValidUuid(user.id)) ? user.id : null;
+    var addQty = Number(p.qty || 0);
 
-    var stockRow = {
-      medicine_id: p.medicineId,
-      location_id: p.locationId,
-      lot: p.lot || '',
-      expiry_date: p.expiryDate || null,
-      qty: Number(p.qty)
-    };
+    // ตรวจสอบว่ามียา Lot เดียวกันในคลังเดียวกันอยู่แล้วหรือไม่
+    var checkQuery = sb.from('stock').select('*')
+      .eq('medicine_id', p.medicineId)
+      .eq('location_id', p.locationId)
+      .eq('lot', p.lot || '');
 
-    return Promise.resolve(sb.from('stock').insert(stockRow)).then(function (res) {
+    if (p.expiryDate) {
+      checkQuery = checkQuery.eq('expiry_date', p.expiryDate);
+    } else {
+      checkQuery = checkQuery.is('expiry_date', null);
+    }
+
+    return Promise.resolve(checkQuery.maybeSingle()).then(function (res) {
       if (res.error) throw res.error;
+      var existing = res.data;
+
+      if (existing) {
+        var newQty = Math.max(0, (existing.qty || 0) + addQty);
+        return sb.from('stock').update({ qty: newQty }).eq('id', existing.id);
+      } else {
+        var stockRow = {
+          medicine_id: p.medicineId,
+          location_id: p.locationId,
+          lot: p.lot || '',
+          expiry_date: p.expiryDate || null,
+          qty: addQty
+        };
+        return sb.from('stock').insert(stockRow);
+      }
+    }).then(function () {
       var mov = {
         type: 'receive',
         medicine_id: p.medicineId,
         lot: p.lot || '',
         expiry_date: p.expiryDate || null,
         to_location_id: p.locationId,
-        qty: Number(p.qty),
+        qty: addQty,
         reason: p.reason || 'รับเข้าคลัง',
         source: p.source || '',
         user_id: userId
       };
       return sb.from('movements').insert(mov);
-    }).then(function (res) {
-      if (res.error) throw res.error;
+    }).then(function () {
       return true;
     });
   }
@@ -356,7 +380,11 @@ window.SupabaseAdapter = (function () {
       var s = res.data;
       if (s.qty < qty) throw new Error('จำนวนยาในสต็อกไม่เพียงพอ');
       var newQty = s.qty - qty;
-      return sb.from('stock').update({ qty: newQty }).eq('id', s.id).then(function () {
+      var stockP = newQty <= 0
+        ? sb.from('stock').delete().eq('id', s.id)
+        : sb.from('stock').update({ qty: newQty }).eq('id', s.id);
+
+      return stockP.then(function () {
         return sb.from('movements').insert({
           type: 'dispense',
           medicine_id: s.medicine_id,
@@ -556,9 +584,12 @@ window.SupabaseAdapter = (function () {
             return q.then(function (sRes) {
               var stockList = sRes.data || [];
               if (stockList.length > 0) {
-                var stockItem = stockList[0];
-                var newQty = Math.max(0, stockItem.qty - qtyDeduct);
-                return sb.from('stock').update({ qty: newQty }).eq('id', stockItem.id).then(function () {
+                var newQty = stockItem.qty - qtyDeduct;
+                var updateStockP = newQty <= 0
+                  ? sb.from('stock').delete().eq('id', stockItem.id)
+                  : sb.from('stock').update({ qty: newQty }).eq('id', stockItem.id);
+
+                return updateStockP.then(function () {
                   return sb.from('movements').insert({
                     type: 'dispense',
                     medicine_id: it.medicineId,

@@ -53,6 +53,9 @@ def main():
 
     formatted_stock = []
     for s in stock:
+        qty = int(s.get('qty') or 0)
+        if qty <= 0:
+            continue
         raw_exp = s.get('expiryDate', '')
         exp = ''
         if raw_exp:
