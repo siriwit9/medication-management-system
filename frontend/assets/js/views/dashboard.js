@@ -25,7 +25,7 @@ Views.dashboard = function (view, params) {
       '</div>' +
       (d.lowStock.length ?
         '<div class="card mb-16" style="border-left:4px solid var(--orange)">' +
-        '<strong>⚠️ สต็อกต่ำกว่าขั้นต่ำ (' + d.lowStock.length + ')</strong>' +
+        '<strong><span data-lucide="alert-triangle" style="display:inline-block;width:16px;height:16px;vertical-align:middle;margin-right:4px;color:var(--orange)"></span> สต็อกต่ำกว่าขั้นต่ำ (' + d.lowStock.length + ')</strong>' +
         '<div class="mt-16">' + d.lowStock.map(function (l) {
           return '<div class="list-item"><div class="grow"><div class="title">' + U.escapeHtml(l.medicineName) + '</div>' +
             '<div class="sub">มี ' + l.have + ' / ขั้นต่ำ ' + l.minStock + '</div></div></div>';

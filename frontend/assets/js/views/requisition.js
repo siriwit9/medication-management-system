@@ -1,4 +1,4 @@
-/** ระบบใบเบิกยา: สร้าง/ดู/พิมพ์ PDF ตามแบบฟอร์มราชการ */
+/** ระบบใบเบิกยา: สร้าง/ดู/แก้ไข + Live Preview แบบ A4 + Drag & Drop + PDF แบบราชการ */
 window.Views = window.Views || {};
 Views.requisition = function (view) {
   var state = { reqs: [], meds: [], stockTotals: {} };
@@ -93,8 +93,17 @@ Views.requisition = function (view) {
       '<div id="req-med-suggest"></div>' +
       '<div id="req-items-list"></div>' +
       '</div>' +
-      '<div class="row"><button class="btn btn-primary" id="req-save"><span data-lucide="save"></span> บันทึกใบเบิก</button>' +
-      (isEdit ? ' <button class="btn" id="req-print"><span data-lucide="printer"></span> พิมพ์ PDF</button>' : '') + '</div>';
+      '<div class="row" style="gap:12px;margin-bottom:16px">' +
+      '<button class="btn btn-primary" id="req-save"><span data-lucide="save"></span> บันทึกใบเบิก</button>' +
+      (isEdit ? ' <button class="btn" id="req-print"><span data-lucide="printer"></span> พิมพ์ PDF</button>' : '') +
+      ' <button class="btn" id="req-toggle-preview"><span data-lucide="eye"></span> ดูตัวอย่าง</button>' +
+      '</div>' +
+
+      // Live Preview area
+      '<div id="req-preview-wrap" class="req-preview-container" style="display:none">' +
+      '<div class="row" style="justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">ตัวอย่างใบเบิกยา (A4)</h3>' +
+      '<button class="btn btn-sm" id="req-preview-fullscreen"><span data-lucide="maximize-2"></span> เต็มจอ</button></div>' +
+      '<div id="req-preview-paper" class="req-preview-paper"></div></div>';
     U.refreshIcons();
 
     // state สำหรับฟอร์ม
@@ -118,12 +127,11 @@ Views.requisition = function (view) {
       suggestBox.innerHTML = matches.map(function (m, i) {
         return '<div class="list-item card-clickable" data-mi="' + i + '"><div class="grow"><div class="title">' +
           U.escapeHtml(m.name) + '</div><div class="sub">' + U.escapeHtml(m.unit || '') +
-          ' · คงเหลือ: ' + (state.stockTotals[m.id] || 0) + '</div></div></div>';
+          ' | คงเหลือ: ' + (state.stockTotals[m.id] || 0) + '</div></div></div>';
       }).join('');
       suggestBox.querySelectorAll('[data-mi]').forEach(function (el) {
         el.onclick = function () {
           var m = matches[Number(el.getAttribute('data-mi'))];
-          // เช็คซ้ำ
           var dup = formItems.filter(function (x) { return x.medicineId === m.id; });
           if (dup.length) { Toast.error('มียานี้ในรายการแล้ว'); return; }
           formItems.push({
@@ -134,38 +142,149 @@ Views.requisition = function (view) {
           suggestBox.innerHTML = '';
           searchInput.value = '';
           renderItemsTable();
+          updatePreview();
         };
       });
     }, 200));
 
+    // Drag & Drop state
+    var dragIdx = null;
+
     function renderItemsTable() {
       var box = view.querySelector('#req-items-list');
       if (!formItems.length) { box.innerHTML = '<p class="muted">ยังไม่มีรายการ — ค้นหายาด้านบนเพื่อเพิ่ม</p>'; return; }
-      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>#</th><th>รายการ</th><th>หน่วย</th><th>ขอเบิก</th><th>อนุมัติ</th><th>คงเหลือ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>' +
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th style="width:30px"></th><th>#</th><th>รายการ</th><th>หน่วย</th><th>ขอเบิก</th><th>อนุมัติ</th><th>คงเหลือ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>' +
         formItems.map(function (it, idx) {
-          return '<tr><td>' + (idx + 1) + '</td><td>' + U.escapeHtml(it.medicineName) + '</td><td>' + U.escapeHtml(it.unit) + '</td>' +
+          return '<tr class="req-item-row" data-row="' + idx + '" draggable="true"><td class="drag-grip"><span data-lucide="grip-vertical"></span></td><td>' + (idx + 1) + '</td><td>' + U.escapeHtml(it.medicineName) + '</td><td>' + U.escapeHtml(it.unit) + '</td>' +
             '<td><input type="number" min="0" value="' + it.qtyRequested + '" data-field="qtyRequested" data-idx="' + idx + '" style="width:70px" /></td>' +
             '<td><input type="number" min="0" value="' + it.qtyApproved + '" data-field="qtyApproved" data-idx="' + idx + '" style="width:70px" /></td>' +
             '<td>' + it.qtyRemaining + '</td>' +
-            '<td><input value="' + U.escapeHtml(it.note) + '" data-field="note" data-idx="' + idx + '" style="width:80px" placeholder="-" /></td>' +
+            '<td><input value="' + U.escapeHtml(it.note) + '" data-field="note" data-idx="' + idx + '" style="width:100px" placeholder="-" /></td>' +
             '<td><button class="btn btn-sm btn-danger" data-rm="' + idx + '"><span data-lucide="x"></span></button></td></tr>';
         }).join('') +
-        '<tr><td colspan="3" style="text-align:right"><strong>รวมทั้งหมด ' + formItems.length + ' รายการ</strong></td><td colspan="5"></td></tr>' +
+        '<tr><td colspan="4" style="text-align:right"><strong>รวมทั้งหมด ' + formItems.length + ' รายการ</strong></td><td colspan="5"></td></tr>' +
         '</tbody></table></div>';
       U.refreshIcons();
 
-      // bind inputs
+      // Bind inputs
       box.querySelectorAll('[data-field]').forEach(function (inp) {
         inp.onchange = function () {
           var idx = Number(inp.getAttribute('data-idx'));
           var field = inp.getAttribute('data-field');
           formItems[idx][field] = field === 'note' ? inp.value : Number(inp.value);
+          updatePreview();
         };
       });
       box.querySelectorAll('[data-rm]').forEach(function (b) {
-        b.onclick = function () { formItems.splice(Number(b.getAttribute('data-rm')), 1); renderItemsTable(); };
+        b.onclick = function () { formItems.splice(Number(b.getAttribute('data-rm')), 1); renderItemsTable(); updatePreview(); };
+      });
+
+      // Drag & Drop
+      box.querySelectorAll('.req-item-row').forEach(function (row) {
+        row.addEventListener('dragstart', function (e) {
+          dragIdx = Number(row.getAttribute('data-row'));
+          row.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        row.addEventListener('dragend', function () {
+          row.classList.remove('dragging');
+          dragIdx = null;
+        });
+        row.addEventListener('dragover', function (e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        });
+        row.addEventListener('drop', function (e) {
+          e.preventDefault();
+          var toIdx = Number(row.getAttribute('data-row'));
+          if (dragIdx !== null && dragIdx !== toIdx) {
+            var moved = formItems.splice(dragIdx, 1)[0];
+            formItems.splice(toIdx, 0, moved);
+            renderItemsTable();
+            updatePreview();
+          }
+        });
       });
     }
+
+    // Toggle preview
+    var previewVisible = false;
+    view.querySelector('#req-toggle-preview').onclick = function () {
+      previewVisible = !previewVisible;
+      view.querySelector('#req-preview-wrap').style.display = previewVisible ? 'block' : 'none';
+      if (previewVisible) updatePreview();
+    };
+
+    // Fullscreen preview
+    view.querySelector('#req-preview-fullscreen').onclick = function () {
+      var paper = view.querySelector('#req-preview-paper');
+      var html = paper.innerHTML;
+      Modal.open({
+        title: 'ตัวอย่างใบเบิกยา',
+        body: '<div class="req-preview-paper" style="max-width:none;padding:15mm 12mm">' + html + '</div>',
+        footer: '<button class="btn btn-primary" onclick="this.closest(\'.modal-backdrop\').remove()">ปิด</button>',
+        wide: true
+      });
+    };
+
+    // Live preview update
+    function updatePreview() {
+      var paper = view.querySelector('#req-preview-paper');
+      if (!paper || !previewVisible) return;
+      var hospitalName = (settings && settings.hospitalName) || 'โรงพยาบาลส่งเสริมสุขภาพประจำตำบล';
+      var dateVal = view.querySelector('#req-date').value || U.todayISO();
+      var dateParts = dateVal.split('-');
+      var thaiMonths = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+        'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+      var dateStr = dateParts.length === 3
+        ? 'วันที่ ' + Number(dateParts[2]) + ' เดือน ' + (thaiMonths[Number(dateParts[1])] || '') + ' พ.ศ. ' + (Number(dateParts[0]) + 543)
+        : dateVal;
+
+      var logoHtml = '';
+      var storedLogo = localStorage.getItem('hospitalLogo');
+      if (storedLogo) {
+        logoHtml = '<div style="text-align:center;margin-bottom:8px"><img src="' + storedLogo + '" style="max-height:60px;max-width:80px" /></div>';
+      }
+
+      var rows = formItems.map(function (it, idx) {
+        return '<tr><td style="text-align:center">' + (idx + 1) + '</td><td>' + U.escapeHtml(it.medicineName) + '</td><td style="text-align:center">' + U.escapeHtml(it.unit) + '</td>' +
+          '<td style="text-align:center">' + it.qtyRequested + '</td><td style="text-align:center">' + it.qtyApproved + '</td>' +
+          '<td style="text-align:center">' + it.qtyRemaining + '</td><td>' + U.escapeHtml(it.note || '') + '</td></tr>';
+      }).join('');
+
+      var requester = view.querySelector('#req-requester').value || '..............';
+      var approver = view.querySelector('#req-approver').value || '..............';
+      var distributor = view.querySelector('#req-distributor').value || '..............';
+      var receiver = view.querySelector('#req-receiver').value || '..............';
+
+      paper.innerHTML =
+        logoHtml +
+        '<h2>ใบเบิกยา</h2>' +
+        '<div class="subtitle">' + U.escapeHtml(hospitalName) + '</div>' +
+        '<p style="text-align:center;margin:4px 0">' + dateStr + '</p>' +
+        '<p style="margin:8px 0">เรื่อง  ขอเบิกยา</p>' +
+        '<p style="margin:4px 0">เรียน  ผู้อำนวยการ' + U.escapeHtml(hospitalName) + '</p>' +
+        '<p style="margin:8px 0;text-indent:2em">ด้วย งานรักษาพยาบาล มีความประสงค์จะขอเบิกยาจากคลังยา ของ ' + U.escapeHtml(hospitalName) + ' ตามรายการดังนี้</p>' +
+        '<table><thead><tr><th>ลำดับ</th><th>รายการ</th><th>หน่วยนับ</th><th>จำนวนขอเบิก</th><th>จำนวนอนุมัติ</th><th>คงเหลือ</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+        (rows || '<tr><td colspan="7" style="text-align:center;color:#999">ยังไม่มีรายการ</td></tr>') +
+        '</tbody></table>' +
+        '<p style="text-align:right;margin:12px 0">รวมทั้งหมด ' + formItems.length + ' รายการ</p>' +
+        '<p style="margin:8px 0">จึงเรียนมาเพื่อโปรดอนุมัติ</p>' +
+        '<div class="sign-row">' +
+        '<div class="sign-box"><div class="sign-line"></div>( ' + U.escapeHtml(requester) + ' )<br/>ผู้เบิก</div>' +
+        '<div class="sign-box"><div class="sign-line"></div>( ' + U.escapeHtml(approver) + ' )<br/>ผู้อนุมัติจ่าย</div>' +
+        '</div>' +
+        '<div class="sign-row" style="margin-top:16px">' +
+        '<div class="sign-box"><div class="sign-line"></div>( ' + U.escapeHtml(distributor) + ' )<br/>ผู้จ่าย</div>' +
+        '<div class="sign-box"><div class="sign-line"></div>( ' + U.escapeHtml(receiver) + ' )<br/>ผู้รับของ</div>' +
+        '</div>';
+    }
+
+    // Update preview when header fields change
+    ['req-date', 'req-requester', 'req-approver', 'req-distributor', 'req-receiver', 'req-note'].forEach(function (id) {
+      var el = view.querySelector('#' + id);
+      if (el) el.addEventListener('input', function () { updatePreview(); });
+    });
 
     view.querySelector('#req-back').onclick = function () {
       API.call('listRequisitions').then(function (r) { state.reqs = r; renderList(); });
@@ -222,6 +341,16 @@ Views.requisition = function (view) {
       }
       var font = useThai ? 'Sarabun' : 'helvetica';
 
+      // ใส่โลโก้/ครุฑ ถ้ามี
+      var y = 15;
+      var storedLogo = localStorage.getItem('hospitalLogo');
+      if (storedLogo) {
+        try {
+          doc.addImage(storedLogo, 'PNG', 88, y, 24, 24);
+          y += 28;
+        } catch (e) { y += 2; }
+      }
+
       // แปลงวันที่เป็น พ.ศ.
       var dateParts = String(req.reqDate).split('-');
       var thaiMonths = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
@@ -230,7 +359,6 @@ Views.requisition = function (view) {
         ? 'วันที่ ' + Number(dateParts[2]) + ' เดือน ' + (thaiMonths[Number(dateParts[1])] || '') + ' พ.ศ. ' + (Number(dateParts[0]) + 543)
         : req.reqDate;
 
-      var y = 20;
       doc.setFontSize(18);
       doc.text('ใบเบิกยา', 105, y, { align: 'center' }); y += 8;
       doc.setFontSize(14);
@@ -252,7 +380,7 @@ Views.requisition = function (view) {
         body: tableRows,
         startY: y,
         styles: { font: font, fontSize: 10, cellPadding: 2 },
-        headStyles: { fillColor: [37, 99, 235], fontSize: 10 },
+        headStyles: { fillColor: [109, 40, 217], fontSize: 10 },
         columnStyles: {
           0: { halign: 'center', cellWidth: 15 },
           2: { halign: 'center', cellWidth: 18 },
@@ -270,7 +398,7 @@ Views.requisition = function (view) {
       doc.text('รวมทั้งหมด.....' + req.items.length + '.....รายการ', 130, y); y += 10;
       doc.text('จึงเรียนมาเพื่อโปรดอนุมัติ', 20, y); y += 18;
 
-      // ลายเซ็น 4 ช่อง (2 แถว × 2 คอลัมน์)
+      // ลายเซ็น 4 ช่อง (2 แถว x 2 คอลัมน์)
       var signY = y;
       var leftX = 25;
       var rightX = 115;

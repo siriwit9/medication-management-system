@@ -48,10 +48,24 @@ function renderHospital(content) {
 
     var pendingLogo = null;
     var preview = content.querySelector('#s-logo-preview');
-    if (s.logoFileId) API.call('getImage', { fileId: s.logoFileId }).then(function (d) { preview.innerHTML = '<img class="med-thumb" style="width:80px;height:80px" src="' + d.dataUrl + '" />'; }).catch(function () {});
+    var existingLogo = localStorage.getItem('hospitalLogo');
+    if (existingLogo) {
+      preview.innerHTML = '<img style="width:80px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--border)" src="' + existingLogo + '" /> <button class="btn btn-sm" id="s-logo-remove" style="margin-left:8px">ลบโลโก้</button>';
+      var rmBtn = preview.querySelector('#s-logo-remove');
+      if (rmBtn) rmBtn.onclick = function () { localStorage.removeItem('hospitalLogo'); preview.innerHTML = '<span class="muted">ยังไม่ได้ตั้งโลโก้</span>'; };
+    } else if (s.logoFileId) {
+      API.call('getImage', { fileId: s.logoFileId }).then(function (d) {
+        preview.innerHTML = '<img style="width:80px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--border)" src="' + d.dataUrl + '" />';
+        localStorage.setItem('hospitalLogo', d.dataUrl);
+      }).catch(function () {});
+    }
     content.querySelector('#s-logo').addEventListener('change', function (e) {
       var f = e.target.files[0]; if (!f) return;
-      U.fileToDataUrl(f).then(function (du) { pendingLogo = { dataUrl: du, filename: f.name }; preview.innerHTML = '<img class="med-thumb" style="width:80px;height:80px" src="' + du + '" />'; });
+      U.fileToDataUrl(f).then(function (du) {
+        pendingLogo = { dataUrl: du, filename: f.name };
+        localStorage.setItem('hospitalLogo', du);
+        preview.innerHTML = '<img style="width:80px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--border)" src="' + du + '" />';
+      });
     });
 
     content.querySelector('#s-save').onclick = function () {
@@ -88,7 +102,7 @@ function renderNotify(content) {
       '<button class="btn btn-primary" id="n-save"><span data-lucide="save"></span> บันทึก</button>' +
       '<button class="btn" id="n-test"><span data-lucide="send"></span> ส่งข้อความทดสอบ</button></div>' +
       '<div class="mt-16" style="padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">' +
-      '<p style="margin:0 0 4px;font-weight:600">📋 วิธีตั้งค่า Telegram</p>' +
+      '<p style="margin:0 0 4px;font-weight:600"><span data-lucide="clipboard" style="display:inline-block;width:14px;height:14px;vertical-align:middle;margin-right:4px"></span> วิธีตั้งค่า Telegram</p>' +
       '<ol style="margin:0;padding-left:18px;font-size:13px">' +
       '<li>สร้างบอทด้วย <b>@BotFather</b> ใน Telegram เพื่อรับ Bot Token</li>' +
       '<li>เพิ่มบอทเข้ากลุ่ม หรือแชทกับบอทเพื่อหา Chat ID</li>' +
