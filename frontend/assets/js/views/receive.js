@@ -1,4 +1,4 @@
-/** รับเข้ายา: ยิงบาร์โค้ด HID / กล้อง / เลือกรายการ -> Lot -> วันหมดอายุ -> จำนวน -> สถานที่ */
+/** รับเข้ายา: ยิงบาร์โค้ด HID / กล้อง / เลือกรายการ -> Lot -> วันหมดอายุ -> จำนวน -> สถานที่ + รายการวันนี้ (ดู/แก้ไข/ยกเลิก) */
 window.Views = window.Views || {};
 Views.receive = function (view) {
   var state = { meds: [], locs: [], selected: null, todayRows: [] };
@@ -9,7 +9,7 @@ Views.receive = function (view) {
   ]).then(function (res) {
     state.meds = res[0];
     state.locs = res[1];
-    var defaultLoc = state.locs.filter(function (l) { return l.isReceivingDefault; })[0] || state.locs[0];
+    var defaultLoc = state.locs.filter(function (l) { return l.isReceivingDefault || l.is_receiving_default; })[0] || state.locs[0];
 
     view.innerHTML =
       '<div class="page-head"><h1 class="page-title">รับเข้ายา</h1>' +
@@ -43,7 +43,6 @@ Views.receive = function (view) {
     }
 
     Scanner.attachHidInput(barcodeInput, function (code) {
-      // ถ้าตรงบาร์โค้ดเป๊ะ -> เลือกเลย ไม่งั้นถือเป็นคำค้น
       var exact = state.meds.filter(function (x) { return String(x.barcode) === String(code); })[0];
       if (exact) findByBarcode(code); else renderSuggest(code);
     });
@@ -129,12 +128,7 @@ Views.receive = function (view) {
       API.call('receive', { payload: { medicineId: m.id, locationId: locId, lot: lot, expiryDate: exp, qty: qty, source: source } })
         .then(function () {
           Toast.success('รับเข้า ' + m.name + ' จำนวน ' + qty);
-          state.todayRows.unshift({
-            name: m.name, lot: lot, exp: exp, qty: qty, source: source,
-            locName: (state.locs.filter(function (l) { return l.id === locId; })[0] || {}).name || '',
-            unit: m.unit || '', time: new Date().toISOString()
-          });
-          renderToday();
+          loadTodayMovements();
           state.selected = null;
           renderSelected(); renderForm();
           view.querySelector('#barcode-input').focus();
@@ -143,26 +137,56 @@ Views.receive = function (view) {
         .finally(function () { btn.disabled = false; });
     }
 
+    function loadTodayMovements() {
+      return API.call('listMovements', { type: 'receive', from: U.todayISO(), to: U.todayISO() }).then(function (rows) {
+        state.todayRows = rows;
+        renderToday();
+      }).catch(function () {});
+    }
+
     function renderToday() {
       var box = view.querySelector('#today-list');
       if (!state.todayRows.length) { box.innerHTML = '<div class="card empty-state">ยังไม่มีการรับเข้าวันนี้</div>'; return; }
-      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>เวลา</th><th>ชื่อยา</th><th>Lot</th><th>วันหมดอายุ</th><th>จำนวน</th><th>สถานที่</th><th>รับจาก</th></tr></thead><tbody>' +
-        state.todayRows.map(function (r) {
-          return '<tr><td>' + U.thaiDateTime(r.time) + '</td><td>' + U.escapeHtml(r.name) + '</td><td>' + U.escapeHtml(r.lot || '-') +
-            '</td><td>' + U.thaiDate(r.exp) + '</td><td>' + r.qty + ' ' + U.escapeHtml(r.unit) + '</td><td>' + U.escapeHtml(r.locName) + '</td><td>' + U.escapeHtml(r.source || '-') + '</td></tr>';
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>เวลา</th><th>ชื่อยา</th><th>Lot</th><th>วันหมดอายุ</th><th>จำนวน</th><th>สถานที่</th><th>รับจาก/เหตุผล</th><th>จัดการ</th></tr></thead><tbody>' +
+        state.todayRows.map(function (r, idx) {
+          return '<tr><td>' + U.thaiDateTime(r.timestamp) + '</td><td><strong>' + U.escapeHtml(r.medicineName) + '</strong></td>' +
+            '<td>' + U.escapeHtml(r.lot || '-') + '</td>' +
+            '<td>' + U.thaiDate(r.expiryDate) + '</td>' +
+            '<td><strong>' + r.qty + '</strong> ' + U.escapeHtml(r.unit || '') + '</td>' +
+            '<td>' + U.escapeHtml(r.toLocationName || '-') + '</td>' +
+            '<td>' + U.escapeHtml(r.reason || '-') + '</td>' +
+            '<td><button class="btn btn-sm" data-edit-rec="' + idx + '">แก้ไข</button> <button class="btn btn-sm btn-danger" data-del-rec="' + idx + '">ยกเลิก</button></td></tr>';
         }).join('') + '</tbody></table></div>';
+      U.refreshIcons();
+
+      box.querySelectorAll('[data-edit-rec]').forEach(function (btn) {
+        btn.onclick = function () {
+          var idx = Number(btn.getAttribute('data-edit-rec'));
+          if (window.openEditMovementModal) {
+            window.openEditMovementModal(state.todayRows[idx], state.locs, loadTodayMovements);
+          }
+        };
+      });
+      box.querySelectorAll('[data-del-rec]').forEach(function (btn) {
+        btn.onclick = function () {
+          var idx = Number(btn.getAttribute('data-del-rec'));
+          if (window.confirmDeleteMovement) {
+            window.confirmDeleteMovement(state.todayRows[idx], loadTodayMovements);
+          }
+        };
+      });
     }
 
     view.querySelector('#export-today').onclick = function () {
       if (!state.todayRows.length) { Toast.error('ยังไม่มีรายการรับเข้าวันนี้'); return; }
       var aoa = [['เวลา', 'ชื่อยา', 'Lot', 'วันหมดอายุ', 'จำนวน', 'หน่วย', 'สถานที่', 'รับจาก']];
       state.todayRows.forEach(function (r) {
-        aoa.push([U.thaiDateTime(r.time), r.name, r.lot, r.exp ? U.thaiDate(r.exp) : '', r.qty, r.unit, r.locName, r.source || '']);
+        aoa.push([U.thaiDateTime(r.timestamp), r.medicineName, r.lot, r.expiryDate ? U.thaiDate(r.expiryDate) : '', r.qty, r.unit, r.toLocationName, r.reason || '']);
       });
       Exporter.toXlsx(aoa, 'รับเข้า_' + U.todayISO(), 'รับเข้าวันนี้');
     };
 
-    renderToday();
+    loadTodayMovements();
     U.refreshIcons();
   });
 };

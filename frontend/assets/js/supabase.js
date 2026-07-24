@@ -415,50 +415,60 @@ window.SupabaseAdapter = (function () {
     var userId = (user && isValidUuid(user.id)) ? user.id : null;
     var addQty = Number(p.qty || 0);
 
-    // ตรวจสอบว่ามียา Lot เดียวกันในคลังเดียวกันอยู่แล้วหรือไม่
-    var checkQuery = sb.from('stock').select('*')
-      .eq('medicine_id', p.medicineId)
-      .eq('location_id', p.locationId)
-      .eq('lot', p.lot || '');
+    var locP = (p.locationId && isValidUuid(p.locationId))
+      ? Promise.resolve(p.locationId)
+      : listLocations().then(function (locs) {
+          var def = locs.filter(function (l) { return l.is_receiving_default || l.isReceivingDefault; })[0];
+          return def ? def.id : (locs[0] ? locs[0].id : null);
+        });
 
-    if (p.expiryDate) {
-      checkQuery = checkQuery.eq('expiry_date', p.expiryDate);
-    } else {
-      checkQuery = checkQuery.is('expiry_date', null);
-    }
+    return locP.then(function (targetLocId) {
+      if (!p.medicineId || !targetLocId) throw new Error('ไม่พบข้อมูลยาหรือสถานที่รับเข้า');
 
-    return Promise.resolve(checkQuery.maybeSingle()).then(function (res) {
-      if (res.error) throw res.error;
-      var existing = res.data;
+      var checkQuery = sb.from('stock').select('*')
+        .eq('medicine_id', p.medicineId)
+        .eq('location_id', targetLocId)
+        .eq('lot', p.lot || '');
 
-      if (existing) {
-        var newQty = Math.max(0, (existing.qty || 0) + addQty);
-        return sb.from('stock').update({ qty: newQty }).eq('id', existing.id);
+      if (p.expiryDate) {
+        checkQuery = checkQuery.eq('expiry_date', p.expiryDate);
       } else {
-        var stockRow = {
+        checkQuery = checkQuery.is('expiry_date', null);
+      }
+
+      return checkQuery.maybeSingle().then(function (res) {
+        if (res.error) throw res.error;
+        var existing = res.data;
+
+        if (existing) {
+          var newQty = Math.max(0, (existing.qty || 0) + addQty);
+          return sb.from('stock').update({ qty: newQty }).eq('id', existing.id);
+        } else {
+          var stockRow = {
+            medicine_id: p.medicineId,
+            location_id: targetLocId,
+            lot: p.lot || '',
+            expiry_date: p.expiryDate || null,
+            qty: addQty
+          };
+          return sb.from('stock').insert(stockRow);
+        }
+      }).then(function () {
+        var mov = {
+          type: 'receive',
           medicine_id: p.medicineId,
-          location_id: p.locationId,
           lot: p.lot || '',
           expiry_date: p.expiryDate || null,
-          qty: addQty
+          to_location_id: targetLocId,
+          qty: addQty,
+          reason: p.reason || 'รับเข้าคลัง',
+          source: p.source || '',
+          user_id: userId
         };
-        return sb.from('stock').insert(stockRow);
-      }
-    }).then(function () {
-      var mov = {
-        type: 'receive',
-        medicine_id: p.medicineId,
-        lot: p.lot || '',
-        expiry_date: p.expiryDate || null,
-        to_location_id: p.locationId,
-        qty: addQty,
-        reason: p.reason || 'รับเข้าคลัง',
-        source: p.source || '',
-        user_id: userId
-      };
-      return sb.from('movements').insert(mov);
-    }).then(function () {
-      return true;
+        return sb.from('movements').insert(mov);
+      }).then(function () {
+        return true;
+      });
     });
   }
 
@@ -559,26 +569,195 @@ window.SupabaseAdapter = (function () {
     });
   }
 
-  function listMovements() {
-    return Promise.resolve(getClient().from('movements').select('*, medicines(name, unit), from_loc:locations!from_location_id(name), to_loc:locations!to_location_id(name)').order('created_at', { ascending: false }).limit(200))
-      .then(function (res) {
-        if (res.error) throw res.error;
-        return (res.data || []).map(function (m) {
-          return {
-            id: m.id,
-            type: m.type,
-            medicineName: m.medicines ? m.medicines.name : '-',
-            unit: m.medicines ? m.medicines.unit : '',
-            lot: m.lot,
-            expiryDate: m.expiry_date,
-            fromLocationName: m.from_loc ? m.from_loc.name : '-',
-            toLocationName: m.to_loc ? m.to_loc.name : '-',
-            qty: m.qty,
-            reason: m.reason,
-            timestamp: m.created_at
-          };
-        });
+  function listMovements(params) {
+    params = params || {};
+    var sb = getClient();
+    var query = sb.from('movements')
+      .select('*, medicines(name, unit), from_loc:locations!from_location_id(name), to_loc:locations!to_location_id(name), users:users!user_id(full_name, username)')
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    var filters = params.filters || params;
+    if (filters.type) query = query.eq('type', filters.type);
+    if (filters.from) query = query.gte('created_at', filters.from + 'T00:00:00');
+    if (filters.to) query = query.lte('created_at', filters.to + 'T23:59:59');
+
+    return Promise.resolve(query).then(function (res) {
+      if (res.error) throw res.error;
+      return (res.data || []).map(function (m) {
+        return {
+          id: m.id,
+          type: m.type,
+          medicineId: m.medicine_id,
+          medicineName: m.medicines ? m.medicines.name : '-',
+          unit: m.medicines ? m.medicines.unit : '',
+          lot: m.lot,
+          expiryDate: m.expiry_date,
+          fromLocationId: m.from_location_id,
+          fromLocationName: m.from_loc ? m.from_loc.name : '-',
+          toLocationId: m.to_location_id,
+          toLocationName: m.to_loc ? m.to_loc.name : '-',
+          qty: m.qty,
+          reason: m.reason,
+          timestamp: m.created_at,
+          userName: m.users ? (m.users.full_name || m.users.username) : '-'
+        };
       });
+    });
+  }
+
+  function saveMovement(payload) {
+    var sb = getClient();
+    var mov = payload.movement || payload;
+    var id = mov.id;
+    var user = window.Auth && window.Auth.getUser();
+    var userId = (user && isValidUuid(user.id)) ? user.id : null;
+    var newQty = Number(mov.qty || 0);
+    var newLot = String(mov.lot || '').trim();
+    var newExp = mov.expiryDate || null;
+    var newReason = String(mov.reason || '').trim();
+    var newLocId = (mov.toLocationId || mov.locationId || null);
+    if (!isValidUuid(newLocId)) newLocId = null;
+
+    if (!id || !isValidUuid(id)) return Promise.reject(new Error('ไม่พบบันทึกการเคลื่อนไหวที่ต้องการแก้ไข'));
+
+    return Promise.resolve(sb.from('movements').select('*').eq('id', id).single()).then(function (res) {
+      if (res.error) throw res.error;
+      var orig = res.data;
+      var oldQty = Number(orig.qty || 0);
+      var qtyDiff = newQty - oldQty;
+      var medId = orig.medicine_id;
+      var oldLocId = orig.to_location_id || orig.from_location_id;
+      var targetLocId = newLocId || oldLocId;
+
+      var stockTask = Promise.resolve();
+
+      if (orig.type === 'receive') {
+        var q = sb.from('stock').select('*').eq('medicine_id', medId).eq('lot', orig.lot || '');
+        if (oldLocId) q = q.eq('location_id', oldLocId);
+
+        stockTask = q.maybeSingle().then(function (sRes) {
+          var s = sRes.data;
+          if (s) {
+            var updatedQty = Math.max(0, (s.qty || 0) + qtyDiff);
+            var updateObj = { qty: updatedQty, lot: newLot, expiry_date: newExp };
+            if (targetLocId) updateObj.location_id = targetLocId;
+            if (updatedQty <= 0) return sb.from('stock').delete().eq('id', s.id);
+            return sb.from('stock').update(updateObj).eq('id', s.id);
+          } else if (newQty > 0) {
+            return sb.from('stock').insert({
+              medicine_id: medId,
+              location_id: targetLocId,
+              lot: newLot,
+              expiry_date: newExp,
+              qty: newQty
+            });
+          }
+        });
+      } else if (orig.type === 'dispense') {
+        var q = sb.from('stock').select('*').eq('medicine_id', medId).eq('lot', orig.lot || '');
+        if (oldLocId) q = q.eq('location_id', oldLocId);
+
+        stockTask = q.maybeSingle().then(function (sRes) {
+          var s = sRes.data;
+          if (s) {
+            var updatedQty = Math.max(0, (s.qty || 0) - qtyDiff);
+            if (updatedQty <= 0) return sb.from('stock').delete().eq('id', s.id);
+            return sb.from('stock').update({ qty: updatedQty }).eq('id', s.id);
+          }
+        });
+      }
+
+      return stockTask.then(function () {
+        var updateMov = { qty: newQty, lot: newLot, expiry_date: newExp, reason: newReason };
+        if (targetLocId && orig.type === 'receive') updateMov.to_location_id = targetLocId;
+        if (userId) updateMov.user_id = userId;
+        return sb.from('movements').update(updateMov).eq('id', id);
+      }).then(function () {
+        return true;
+      });
+    });
+  }
+
+  function deleteMovement(params) {
+    var id = typeof params === 'object' ? params.id : params;
+    if (!id || !isValidUuid(id)) return Promise.reject(new Error('ระบุ ID ไม่ถูกต้อง'));
+
+    var sb = getClient();
+    return Promise.resolve(sb.from('movements').select('*').eq('id', id).single()).then(function (res) {
+      if (res.error) throw res.error;
+      var orig = res.data;
+      var medId = orig.medicine_id;
+      var qty = Number(orig.qty || 0);
+
+      var revertP = Promise.resolve();
+
+      if (orig.type === 'receive') {
+        var targetLoc = orig.to_location_id;
+        var q = sb.from('stock').select('*').eq('medicine_id', medId).eq('lot', orig.lot || '');
+        if (targetLoc) q = q.eq('location_id', targetLoc);
+
+        revertP = q.maybeSingle().then(function (sRes) {
+          var s = sRes.data;
+          if (s) {
+            var remain = (s.qty || 0) - qty;
+            if (remain <= 0) return sb.from('stock').delete().eq('id', s.id);
+            return sb.from('stock').update({ qty: remain }).eq('id', s.id);
+          }
+        });
+      } else if (orig.type === 'dispense') {
+        var targetLoc = orig.from_location_id;
+        var q = sb.from('stock').select('*').eq('medicine_id', medId).eq('lot', orig.lot || '');
+        if (targetLoc) q = q.eq('location_id', targetLoc);
+
+        revertP = q.maybeSingle().then(function (sRes) {
+          var s = sRes.data;
+          if (s) {
+            return sb.from('stock').update({ qty: (s.qty || 0) + qty }).eq('id', s.id);
+          } else {
+            return sb.from('stock').insert({
+              medicine_id: medId,
+              location_id: targetLoc,
+              lot: orig.lot || '',
+              expiry_date: orig.expiry_date || null,
+              qty: qty
+            });
+          }
+        });
+      } else if (orig.type === 'transfer') {
+        var fromLoc = orig.from_location_id;
+        var toLoc = orig.to_location_id;
+
+        revertP = sb.from('stock').select('*').eq('medicine_id', medId).eq('location_id', toLoc).eq('lot', orig.lot || '').maybeSingle().then(function (toRes) {
+          var toStock = toRes.data;
+          if (toStock) {
+            var newToQty = Math.max(0, (toStock.qty || 0) - qty);
+            return newToQty <= 0 ? sb.from('stock').delete().eq('id', toStock.id) : sb.from('stock').update({ qty: newToQty }).eq('id', toStock.id);
+          }
+        }).then(function () {
+          return sb.from('stock').select('*').eq('medicine_id', medId).eq('location_id', fromLoc).eq('lot', orig.lot || '').maybeSingle();
+        }).then(function (fromRes) {
+          var fromStock = fromRes.data;
+          if (fromStock) {
+            return sb.from('stock').update({ qty: (fromStock.qty || 0) + qty }).eq('id', fromStock.id);
+          } else {
+            return sb.from('stock').insert({
+              medicine_id: medId,
+              location_id: fromLoc,
+              lot: orig.lot || '',
+              expiry_date: orig.expiry_date || null,
+              qty: qty
+            });
+          }
+        });
+      }
+
+      return revertP.then(function () {
+        return sb.from('movements').delete().eq('id', id);
+      }).then(function () {
+        return true;
+      });
+    });
   }
 
   // ================= Requisitions =================
@@ -801,6 +980,24 @@ window.SupabaseAdapter = (function () {
       var insertItemsP = itemRows.length > 0 ? sb.from('receipt_items').insert(itemRows) : Promise.resolve();
 
       return insertItemsP.then(function () {
+        var stockTasks = (receiptData.items || []).map(function (it) {
+          var qtyDeduct = Number(it.qty || 1);
+          if (qtyDeduct <= 0) return Promise.resolve();
+
+          return sb.from('stock').select('*').eq('medicine_id', it.medicineId).order('qty', { ascending: false }).then(function (sRes) {
+            var stockList = sRes.data || [];
+            if (stockList.length > 0) {
+              var sItem = stockList[0];
+              var newQty = sItem.qty - qtyDeduct;
+              var updateP = newQty <= 0
+                ? sb.from('stock').delete().eq('id', sItem.id)
+                : sb.from('stock').update({ qty: newQty }).eq('id', sItem.id);
+              return updateP;
+            }
+          });
+        });
+        return Promise.all(stockTasks);
+      }).then(function () {
         var movements = (receiptData.items || []).map(function (it) {
           return {
             type: 'dispense',
@@ -822,8 +1019,27 @@ window.SupabaseAdapter = (function () {
 
   function deleteReceipt(id) {
     var targetId = typeof id === 'object' ? id.id : id;
-    return Promise.resolve(getClient().from('receipts').delete().eq('id', targetId)).then(function (res) {
+    var sb = getClient();
+
+    return Promise.resolve(sb.from('receipts').select('*, receipt_items(*)').eq('id', targetId).single()).then(function (res) {
       if (res.error) throw res.error;
+      var rec = res.data;
+      var items = rec ? rec.receipt_items || [] : [];
+
+      var restoreTasks = items.map(function (it) {
+        var qtyRestore = Number(it.qty || 1);
+        return sb.from('stock').select('*').eq('medicine_id', it.medicine_id).maybeSingle().then(function (sRes) {
+          var s = sRes.data;
+          if (s) {
+            return sb.from('stock').update({ qty: (s.qty || 0) + qtyRestore }).eq('id', s.id);
+          }
+        });
+      });
+
+      return Promise.all(restoreTasks).then(function () {
+        return sb.from('receipts').delete().eq('id', targetId);
+      });
+    }).then(function () {
       return true;
     });
   }
@@ -865,7 +1081,7 @@ window.SupabaseAdapter = (function () {
     listMedicines: listMedicines, saveMedicine: saveMedicine, deleteMedicine: deleteMedicine,
     uploadMedicineImage: uploadMedicineImage, getMedicineImage: getMedicineImage, uploadLogo: uploadLogo, getImage: getImage,
     listStockByLocation: listStockByLocation, exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
-    transferStock: transferStock, listMovements: listMovements,
+    transferStock: transferStock, listMovements: listMovements, saveMovement: saveMovement, deleteMovement: deleteMovement,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
     listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,
     importGoogleSheetSeed: importGoogleSheetSeed
