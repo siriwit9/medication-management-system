@@ -43,8 +43,15 @@ window.API = (function () {
       case 'search': return sb.search(params);
       case 'listLocations': return sb.listLocations();
       case 'saveLocation': return sb.saveLocation(params.location);
+      case 'deleteLocation': return sb.deleteLocation(params);
+      case 'reorderLocations': return sb.reorderLocations(params);
       case 'listMedicines': return sb.listMedicines();
       case 'saveMedicine': return sb.saveMedicine(params.medicine);
+      case 'deleteMedicine': return sb.deleteMedicine(params);
+      case 'uploadMedicineImage': return sb.uploadMedicineImage(params);
+      case 'getMedicineImage': return sb.getMedicineImage(params);
+      case 'uploadLogo': return sb.uploadLogo(params);
+      case 'getImage': return sb.getImage(params);
       case 'listStockByLocation': return sb.listStockByLocation(params);
       case 'exportRows': return sb.exportRows(params.kind);
       case 'receive':

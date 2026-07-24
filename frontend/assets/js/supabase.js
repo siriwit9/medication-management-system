@@ -57,25 +57,53 @@ window.SupabaseAdapter = (function () {
   }
 
   function saveUser(payload) {
-    var u = payload.user;
-    return Promise.resolve(getClient().from('users').upsert(u)).then(function (res) {
+    var u = payload.user || payload;
+    var row = {
+      username: u.username,
+      role: u.role || 'staff',
+      active: u.active !== undefined ? u.active : true,
+      full_name: u.full_name || u.username
+    };
+    if (u.id && isValidUuid(u.id)) {
+      row.id = u.id;
+    }
+    if (u.password) {
+      row.password_hash = u.password;
+    }
+    return Promise.resolve(getClient().from('users').upsert(row)).then(function (res) {
       if (res.error) throw res.error;
       return true;
     });
   }
 
   function deleteUser(params) {
-    return Promise.resolve(getClient().from('users').delete().eq('id', params.id)).then(function (res) {
+    var id = typeof params === 'object' ? params.id : params;
+    return Promise.resolve(getClient().from('users').delete().eq('id', id)).then(function (res) {
       if (res.error) throw res.error;
       return true;
     });
   }
 
   function resetPassword(params) {
+    var id = typeof params === 'object' ? params.id : params;
+    var newPw = (params && params.newPassword) || '123456';
+    if (id && isValidUuid(id)) {
+      return Promise.resolve(getClient().from('users').update({ password_hash: newPw }).eq('id', id)).then(function (res) {
+        if (res.error) throw res.error;
+        return true;
+      });
+    }
     return Promise.resolve(true);
   }
 
   function changeMyPassword(params) {
+    var user = window.Auth && window.Auth.getUser();
+    if (user && isValidUuid(user.id)) {
+      return Promise.resolve(getClient().from('users').update({ password_hash: params.newPassword }).eq('id', user.id)).then(function (res) {
+        if (res.error) throw res.error;
+        return true;
+      });
+    }
     return Promise.resolve(true);
   }
 
@@ -97,7 +125,7 @@ window.SupabaseAdapter = (function () {
     var rows = Object.keys(settingsObj).map(function (k) { return { key: k, value: String(settingsObj[k]) }; });
     return Promise.resolve(sb.from('settings').upsert(rows, { onConflict: 'key' })).then(function (res) {
       if (res.error) throw res.error;
-      return true;
+      return getSettings();
     });
   }
 
@@ -237,10 +265,37 @@ window.SupabaseAdapter = (function () {
   }
 
   function saveLocation(loc) {
-    return Promise.resolve(getClient().from('locations').upsert(loc)).then(function (res) {
+    var row = {
+      name: loc.name,
+      icon: loc.icon || 'package',
+      color: loc.color || '#2563eb',
+      is_receiving_default: !!loc.isReceivingDefault
+    };
+    if (loc.id && isValidUuid(loc.id)) {
+      row.id = loc.id;
+    }
+    return Promise.resolve(getClient().from('locations').upsert(row).select()).then(function (res) {
       if (res.error) throw res.error;
-      return res.data;
+      return res.data ? res.data[0] : row;
     });
+  }
+
+  function deleteLocation(params) {
+    var id = typeof params === 'object' ? params.id : params;
+    if (!id || !isValidUuid(id)) return Promise.resolve(true);
+    return Promise.resolve(getClient().from('locations').delete().eq('id', id)).then(function (res) {
+      if (res.error) throw res.error;
+      return true;
+    });
+  }
+
+  function reorderLocations(params) {
+    var ids = Array.isArray(params) ? params : ((params && params.orderedIds) || []);
+    var sb = getClient();
+    var tasks = ids.filter(isValidUuid).map(function (id, idx) {
+      return sb.from('locations').update({ sort_order: idx + 1 }).eq('id', id);
+    });
+    return Promise.all(tasks).then(function () { return true; });
   }
 
   // ================= Medicines =================
@@ -259,19 +314,56 @@ window.SupabaseAdapter = (function () {
 
   function saveMedicine(med) {
     var row = {
-      id: med.id || undefined,
       name: med.name,
       barcode: med.barcode || '',
       unit: med.unit || '',
       min_stock: Number(med.minStock || 0),
       require_lot: !!med.requireLot,
-      default_location_id: med.defaultLocationId || null,
+      default_location_id: (med.defaultLocationId && isValidUuid(med.defaultLocationId)) ? med.defaultLocationId : null,
       jhcis_drug_code: med.jhcisDrugCode || ''
     };
+    if (med.id && isValidUuid(med.id)) {
+      row.id = med.id;
+    }
     return Promise.resolve(getClient().from('medicines').upsert(row).select()).then(function (res) {
       if (res.error) throw res.error;
       return res.data[0];
     });
+  }
+
+  function deleteMedicine(params) {
+    var id = typeof params === 'object' ? params.id : params;
+    if (!id || !isValidUuid(id)) return Promise.resolve(true);
+    return Promise.resolve(getClient().from('medicines').delete().eq('id', id)).then(function (res) {
+      if (res.error) throw res.error;
+      return true;
+    });
+  }
+
+  function uploadMedicineImage(params) {
+    if (params && params.medicineId && params.dataUrl) {
+      try { localStorage.setItem('med_img_' + params.medicineId, params.dataUrl); } catch (e) {}
+    }
+    return Promise.resolve({ dataUrl: params ? params.dataUrl : '' });
+  }
+
+  function getMedicineImage(params) {
+    var fileId = params ? params.fileId : null;
+    var dataUrl = fileId ? localStorage.getItem('med_img_' + fileId) : null;
+    return Promise.resolve({ dataUrl: dataUrl || '' });
+  }
+
+  function uploadLogo(params) {
+    if (params && params.dataUrl) {
+      try { localStorage.setItem('hospitalLogo', params.dataUrl); } catch (e) {}
+    }
+    return Promise.resolve({ dataUrl: params ? params.dataUrl : '' });
+  }
+
+  function getImage(params) {
+    var fileId = params ? params.fileId : null;
+    var dataUrl = fileId ? localStorage.getItem(fileId) : null;
+    return Promise.resolve({ dataUrl: dataUrl || '' });
   }
 
   // ================= Stock & Movements =================
@@ -408,6 +500,8 @@ window.SupabaseAdapter = (function () {
       var s = res.data;
       var diff = actual - s.qty;
       return sb.from('stock').update({ qty: actual }).eq('id', s.id).then(function () {
+        var user = window.Auth && window.Auth.getUser();
+        var userId = (user && isValidUuid(user.id)) ? user.id : null;
         return sb.from('movements').insert({
           type: 'adjust',
           medicine_id: s.medicine_id,
@@ -415,8 +509,11 @@ window.SupabaseAdapter = (function () {
           expiry_date: s.expiry_date,
           to_location_id: s.location_id,
           qty: diff,
-          reason: 'ปรับยอดนับจริง (นับได้ ' + actual + ' เดิม ' + s.qty + ')'
+          reason: 'ปรับยอดนับจริง (นับได้ ' + actual + ' เดิม ' + s.qty + ')',
+          user_id: userId
         });
+      }).then(function () {
+        return { ok: true, adjusted: diff };
       });
     });
   }
@@ -426,6 +523,8 @@ window.SupabaseAdapter = (function () {
     var p = params.payload || params;
     var qty = Number(p.qty);
     var stockId = p.stockId;
+    var user = window.Auth && window.Auth.getUser();
+    var userId = (user && isValidUuid(user.id)) ? user.id : null;
 
     var fetchP = stockId
       ? sb.from('stock').select('*').eq('id', stockId).single()
@@ -453,7 +552,8 @@ window.SupabaseAdapter = (function () {
           from_location_id: src.location_id,
           to_location_id: p.toLocationId,
           qty: qty,
-          reason: p.reason || 'ย้ายคลัง'
+          reason: p.reason || 'ย้ายคลัง',
+          user_id: userId
         });
       });
     });
@@ -529,7 +629,7 @@ window.SupabaseAdapter = (function () {
   }
 
   function saveRequisition(payload) {
-    var req = payload.requisition;
+    var req = payload.requisition || payload;
     var sb = getClient();
     var user = window.Auth && window.Auth.getUser();
     var reqNum = req.reqNumber || ('REQ-' + Date.now().toString().slice(-6));
@@ -549,7 +649,7 @@ window.SupabaseAdapter = (function () {
       created_by: userId
     };
 
-    var query = req.id
+    var query = (req.id && isValidUuid(req.id))
       ? sb.from('requisitions').update(mainRow).eq('id', req.id).select()
       : sb.from('requisitions').insert(mainRow).select();
 
@@ -569,6 +669,7 @@ window.SupabaseAdapter = (function () {
             note: it.note || ''
           };
         });
+        if (!itemRows.length) return Promise.resolve();
         return sb.from('requisition_items').insert(itemRows);
       }).then(function () {
         // หากสถานะเป็น 'approved' หรือ 'completed' ให้ทำการหักสต็อกของคลังยาที่เลือกตามจริง
@@ -584,6 +685,7 @@ window.SupabaseAdapter = (function () {
             return q.then(function (sRes) {
               var stockList = sRes.data || [];
               if (stockList.length > 0) {
+                var stockItem = stockList[0];
                 var newQty = stockItem.qty - qtyDeduct;
                 var updateStockP = newQty <= 0
                   ? sb.from('stock').delete().eq('id', stockItem.id)
@@ -613,7 +715,8 @@ window.SupabaseAdapter = (function () {
   }
 
   function deleteRequisition(id) {
-    return Promise.resolve(getClient().from('requisitions').delete().eq('id', id)).then(function (res) {
+    var targetId = typeof id === 'object' ? id.id : id;
+    return Promise.resolve(getClient().from('requisitions').delete().eq('id', targetId)).then(function (res) {
       if (res.error) throw res.error;
       return true;
     });
@@ -657,6 +760,7 @@ window.SupabaseAdapter = (function () {
     var sb = getClient();
     var user = window.Auth && window.Auth.getUser();
     var recNum = receiptData.receiptNumber || ('REC-' + Date.now().toString().slice(-6));
+    var userId = (user && isValidUuid(user.id)) ? user.id : null;
 
     var mainRow = {
       receipt_number: recNum,
@@ -668,10 +772,14 @@ window.SupabaseAdapter = (function () {
       dispenser_name: receiptData.dispenserName || '',
       status: 'completed',
       note: receiptData.note || '',
-      created_by: user ? user.id : null
+      created_by: userId
     };
 
-    return Promise.resolve(sb.from('receipts').insert(mainRow).select()).then(function (res) {
+    var query = (receiptData.id && isValidUuid(receiptData.id))
+      ? sb.from('receipts').update(mainRow).eq('id', receiptData.id).select()
+      : sb.from('receipts').insert(mainRow).select();
+
+    return Promise.resolve(query).then(function (res) {
       if (res.error) throw res.error;
       var saved = res.data[0];
       var recId = saved.id;
@@ -690,7 +798,9 @@ window.SupabaseAdapter = (function () {
         };
       });
 
-      return sb.from('receipt_items').insert(itemRows).then(function () {
+      var insertItemsP = itemRows.length > 0 ? sb.from('receipt_items').insert(itemRows) : Promise.resolve();
+
+      return insertItemsP.then(function () {
         var movements = (receiptData.items || []).map(function (it) {
           return {
             type: 'dispense',
@@ -699,9 +809,10 @@ window.SupabaseAdapter = (function () {
             expiry_date: it.expiryDate || null,
             qty: Number(it.qty || 1),
             reason: 'ออกใบเสร็จ/จ่ายยาผู้ป่วย: ' + (receiptData.patientName || recNum),
-            user_id: user ? user.id : null
+            user_id: userId
           };
         });
+        if (movements.length === 0) return Promise.resolve();
         return sb.from('movements').insert(movements);
       }).then(function () {
         return saved;
@@ -710,7 +821,8 @@ window.SupabaseAdapter = (function () {
   }
 
   function deleteReceipt(id) {
-    return Promise.resolve(getClient().from('requisitions').delete().eq('id', id)).then(function (res) {
+    var targetId = typeof id === 'object' ? id.id : id;
+    return Promise.resolve(getClient().from('receipts').delete().eq('id', targetId)).then(function (res) {
       if (res.error) throw res.error;
       return true;
     });
@@ -749,9 +861,10 @@ window.SupabaseAdapter = (function () {
     isConfigured: isConfigured, login: login, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
     resetPassword: resetPassword, changeMyPassword: changeMyPassword,
     getSettings: getSettings, saveSettings: saveSettings, getDashboard: getDashboard, search: search,
-    listLocations: listLocations, saveLocation: saveLocation,
-    listMedicines: listMedicines, saveMedicine: saveMedicine, listStockByLocation: listStockByLocation,
-    exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
+    listLocations: listLocations, saveLocation: saveLocation, deleteLocation: deleteLocation, reorderLocations: reorderLocations,
+    listMedicines: listMedicines, saveMedicine: saveMedicine, deleteMedicine: deleteMedicine,
+    uploadMedicineImage: uploadMedicineImage, getMedicineImage: getMedicineImage, uploadLogo: uploadLogo, getImage: getImage,
+    listStockByLocation: listStockByLocation, exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
     transferStock: transferStock, listMovements: listMovements,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
     listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,

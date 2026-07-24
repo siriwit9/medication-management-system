@@ -113,7 +113,7 @@ function openCount(r, reload) {
   };
 }
 
-function openTransfer(r, locs, reload) {
+window.openTransfer = function openTransfer(r, locs, reload) {
   var options = locs.filter(function (l) { return l.id !== r.locationId; })
     .map(function (l) { return '<option value="' + l.id + '">' + U.escapeHtml(l.name) + '</option>'; }).join('');
   var body = U.el('<div>' +
