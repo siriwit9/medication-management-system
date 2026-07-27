@@ -4,18 +4,37 @@ window.U = (function () {
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
-  // YYYY-MM-DD -> "12 ม.ค. 2567"
+  // YYYY-MM-DD หรือ DD/MM/YYYY -> "12 ม.ค. 2569" (พ.ศ.)
   function thaiDate(isoOrDate) {
     if (!isoOrDate) return '-';
+    if (typeof isoOrDate === 'string') {
+      var str = isoOrDate.trim();
+      if (str.indexOf('/') >= 0) {
+        var parts = str.split('/');
+        if (parts.length === 3) {
+          var day = parseInt(parts[0], 10);
+          var month = parseInt(parts[1], 10) - 1;
+          var year = parseInt(parts[2], 10);
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            if (year < 2400) year += 543;
+            if (month >= 0 && month < 12) {
+              return day + ' ' + TH_MONTHS[month] + ' ' + year;
+            }
+          }
+        }
+      }
+    }
     var d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
     if (isNaN(d.getTime())) return String(isoOrDate);
-    return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543);
+    var y = d.getFullYear();
+    if (y < 2400) y += 543;
+    return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + y;
   }
 
-  // วันเวลาแบบเต็ม
+  // วันเวลาแบบเต็ม (พ.ศ.)
   function thaiDateTime(iso) {
     if (!iso) return '-';
-    var d = new Date(iso);
+    var d = (iso instanceof Date) ? iso : new Date(iso);
     if (isNaN(d.getTime())) return String(iso);
     return thaiDate(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }

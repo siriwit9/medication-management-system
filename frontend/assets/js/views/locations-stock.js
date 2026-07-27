@@ -46,15 +46,20 @@ Views.locationsStock = function (view, params) {
 
 function renderStockTable(rows, canManage, showLoc) {
   if (!rows.length) return '<div class="card empty-state">ไม่มียาในส่วนนี้</div>';
-  var head = '<tr><th>ชื่อยา</th>' + (showLoc ? '<th>สถานที่</th>' : '') + '<th>Lot</th><th>วันหมดอายุ</th><th>คงเหลือ</th>' + (canManage ? '<th>จัดการ</th>' : '') + '</tr>';
+  var head = '<tr><th>ชื่อยา</th>' + (showLoc ? '<th>สถานที่</th>' : '') + '<th>Lot</th><th>วันหมดอายุ</th><th>สถานะ</th><th>คงเหลือ</th>' + (canManage ? '<th>จัดการ</th>' : '') + '</tr>';
+  var tagClass = { red: 'tag-red', orange: 'tag-orange', yellow: 'tag-yellow', green: 'tag-green' };
   var body = rows.map(function (r) {
     var actions = canManage ?
       '<td><button class="btn btn-sm" data-act="dispense" data-id="' + r.stockId + '">ตัดจ่าย/ทิ้ง</button> ' +
       '<button class="btn btn-sm" data-act="count" data-id="' + r.stockId + '">ตรวจนับ</button> ' +
       '<button class="btn btn-sm" data-act="transfer" data-id="' + r.stockId + '">ย้าย</button></td>' : '';
-    return '<tr><td>' + U.escapeHtml(r.medicineName) + '</td>' +
+    var statusPill = (r.daysLeft !== undefined && r.bucket)
+      ? '<span class="pill-tag ' + (tagClass[r.bucket] || 'tag-green') + '">' + U.daysLeftText(r.daysLeft) + '</span>'
+      : '-';
+    return '<tr><td><strong>' + U.escapeHtml(r.medicineName) + '</strong></td>' +
       (showLoc ? '<td>' + U.escapeHtml(r.locationName || '') + '</td>' : '') +
       '<td>' + U.escapeHtml(r.lot || '-') + '</td><td>' + U.thaiDate(r.expiryDate) + '</td>' +
+      '<td>' + statusPill + '</td>' +
       '<td>' + r.qty + ' ' + U.escapeHtml(r.unit || '') + '</td>' + actions + '</tr>';
   }).join('');
   return '<div class="table-wrap"><table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';

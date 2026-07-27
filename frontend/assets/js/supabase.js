@@ -70,8 +70,19 @@ window.SupabaseAdapter = (function () {
     if (u.password) {
       row.password_hash = u.password;
     }
-    return Promise.resolve(getClient().from('users').upsert(row)).then(function (res) {
-      if (res.error) throw res.error;
+    var sb = getClient();
+    return Promise.resolve(sb.from('users').upsert(row)).then(function (res) {
+      if (res.error) {
+        // หากใน DB ยังไม่มีคอลัมน์ password_hash ให้ลอง upsert โดยไม่รวม password_hash
+        if (res.error.code === 'PGRST204' || (res.error.message && res.error.message.indexOf('password_hash') >= 0)) {
+          delete row.password_hash;
+          return sb.from('users').upsert(row).then(function (res2) {
+            if (res2.error) throw res2.error;
+            return true;
+          });
+        }
+        throw res.error;
+      }
       return true;
     });
   }
@@ -129,6 +140,43 @@ window.SupabaseAdapter = (function () {
     });
   }
 
+  // ================= Telegram Notifications =================
+  function sendTelegramMessage(token, chatId, text) {
+    if (!token || !chatId) {
+      return Promise.reject(new Error('กรุณาระบุ Telegram Bot Token และ Chat ID ในหน้าตั้งค่า'));
+    }
+    var url = 'https://api.telegram.org/bot' + encodeURIComponent(token) + '/sendMessage';
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      })
+    }).then(function (res) {
+      return res.json();
+    }).then(function (json) {
+      if (!json.ok) {
+        throw new Error(json.description || 'ส่งข้อความ Telegram ไม่สำเร็จ');
+      }
+      return true;
+    });
+  }
+
+  function testNotify() {
+    return getSettings().then(function (s) {
+      var token = s.telegramToken;
+      var chatId = s.telegramChatId;
+      var hospital = s.hospitalName || 'โรงพยาบาลส่งเสริมสุขภาพประจำตำบล';
+      var text = '<b>🔔 ทดสอบการแจ้งเตือนจากระบบคลังยา</b>\n' +
+        '🏥 ' + U.escapeHtml(hospital) + '\n' +
+        '📅 วันที่: ' + U.thaiDateTime(new Date()) + '\n\n' +
+        '✅ เชื่อมต่อระบบแจ้งเตือน Telegram สำเร็จเรียบร้อย!';
+      return sendTelegramMessage(token, chatId, text);
+    });
+  }
+
   // ================= Dashboard & Search =================
   function getDashboard(params) {
     var locId = (params && params.locationId) || '';
@@ -136,16 +184,20 @@ window.SupabaseAdapter = (function () {
 
     return Promise.all([
       sb.from('stock').select('*, medicines(*), locations(*)'),
-      sb.from('locations').select('*').order('sort_order', { ascending: true })
+      sb.from('locations').select('*').order('sort_order', { ascending: true }),
+      getSettings()
     ]).then(function (res) {
       if (res[0].error) throw res[0].error;
       if (res[1].error) throw res[1].error;
 
       var rawStock = res[0].data || [];
       var locations = res[1].data || [];
+      var settings = res[2] || {};
 
       var now = new Date();
-      var redDays = 35, orangeDays = 60, yellowDays = 120;
+      var redDays = Number(settings.warnRed || 35);
+      var orangeDays = Number(settings.warnOrange || 60);
+      var yellowDays = Number(settings.warnYellow || 120);
 
       var buckets = { red: 0, orange: 0, yellow: 0, green: 0 };
       var items = [];
@@ -372,15 +424,29 @@ window.SupabaseAdapter = (function () {
     var query = getClient().from('stock').select('*, medicines(*), locations(*)').gt('qty', 0);
     if (locId) query = query.eq('location_id', locId);
     var now = new Date();
-    return Promise.resolve(query).then(function (res) {
-      if (res.error) throw res.error;
-      return (res.data || []).map(function (s) {
+    return Promise.all([
+      query,
+      getSettings()
+    ]).then(function (res) {
+      if (res[0].error) throw res[0].error;
+      var raw = res[0].data || [];
+      var settings = res[1] || {};
+      var redDays = Number(settings.warnRed || 35);
+      var orangeDays = Number(settings.warnOrange || 60);
+      var yellowDays = Number(settings.warnYellow || 120);
+
+      return raw.map(function (s) {
         var exp = s.expiry_date ? new Date(s.expiry_date) : null;
         var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
+        var bucket = 'green';
+        if (daysLeft <= redDays) bucket = 'red';
+        else if (daysLeft <= orangeDays) bucket = 'orange';
+        else if (daysLeft <= yellowDays) bucket = 'yellow';
+
         return {
           stockId: s.id, medicineId: s.medicine_id, medicineName: s.medicines ? s.medicines.name : '-',
           locationId: s.location_id, locationName: s.locations ? s.locations.name : '-',
-          lot: s.lot, expiryDate: s.expiry_date, daysLeft: daysLeft, qty: s.qty, unit: s.medicines ? s.medicines.unit : ''
+          lot: s.lot, expiryDate: s.expiry_date, daysLeft: daysLeft, bucket: bucket, qty: s.qty, unit: s.medicines ? s.medicines.unit : ''
         };
       });
     });
@@ -1084,6 +1150,6 @@ window.SupabaseAdapter = (function () {
     transferStock: transferStock, listMovements: listMovements, saveMovement: saveMovement, deleteMovement: deleteMovement,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
     listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,
-    importGoogleSheetSeed: importGoogleSheetSeed
+    importGoogleSheetSeed: importGoogleSheetSeed, testNotify: testNotify, sendTelegramMessage: sendTelegramMessage
   };
 })();

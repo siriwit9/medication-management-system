@@ -439,8 +439,10 @@ Views.requisition = function (view) {
       var dateParts = String(req.reqDate).split('-');
       var thaiMonths = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
         'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+      var reqYear = Number(dateParts[0]);
+      if (reqYear < 2400) reqYear += 543;
       var dateStr = dateParts.length === 3
-        ? 'วันที่ ' + Number(dateParts[2]) + ' เดือน ' + (thaiMonths[Number(dateParts[1])] || '') + ' พ.ศ. ' + (Number(dateParts[0]) + 543)
+        ? 'วันที่ ' + Number(dateParts[2]) + ' เดือน ' + (thaiMonths[Number(dateParts[1])] || '') + ' พ.ศ. ' + reqYear
         : req.reqDate;
 
       doc.setFontSize(18);
