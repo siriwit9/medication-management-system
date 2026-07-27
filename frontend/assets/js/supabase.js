@@ -214,8 +214,7 @@ window.SupabaseAdapter = (function () {
         // ไม่นำรายการที่หมดสต็อก (qty <= 0) มาแสดงในตารางใกล้หมดอายุ
         if (qty <= 0) return;
 
-        var exp = s.expiry_date ? new Date(s.expiry_date) : null;
-        var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
+        var daysLeft = s.expiry_date ? U.calcDaysLeft(s.expiry_date, now) : 999;
         var bucket = 'green';
         if (daysLeft <= redDays) bucket = 'red';
         else if (daysLeft <= orangeDays) bucket = 'orange';
@@ -251,8 +250,7 @@ window.SupabaseAdapter = (function () {
         var totalQty = 0;
         locStock.forEach(function (s) {
           totalQty += (s.qty || 0);
-          var exp = s.expiry_date ? new Date(s.expiry_date) : null;
-          var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
+          var daysLeft = s.expiry_date ? U.calcDaysLeft(s.expiry_date, now) : 999;
           if (daysLeft <= redDays) locBuckets.red++;
           else if (daysLeft <= orangeDays) locBuckets.orange++;
           else if (daysLeft <= yellowDays) locBuckets.yellow++;
@@ -286,8 +284,7 @@ window.SupabaseAdapter = (function () {
       });
       var now = new Date();
       return filtered.map(function (s) {
-        var exp = s.expiry_date ? new Date(s.expiry_date) : null;
-        var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
+        var daysLeft = s.expiry_date ? U.calcDaysLeft(s.expiry_date, now) : 999;
         return {
           stockId: s.id, medicineName: s.medicines ? s.medicines.name : '-',
           locationName: s.locations ? s.locations.name : '-', lot: s.lot,
@@ -436,8 +433,7 @@ window.SupabaseAdapter = (function () {
       var yellowDays = Number(settings.warnYellow || 120);
 
       return raw.map(function (s) {
-        var exp = s.expiry_date ? new Date(s.expiry_date) : null;
-        var daysLeft = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
+        var daysLeft = s.expiry_date ? U.calcDaysLeft(s.expiry_date, now) : 999;
         var bucket = 'green';
         if (daysLeft <= redDays) bucket = 'red';
         else if (daysLeft <= orangeDays) bucket = 'orange';

@@ -88,7 +88,7 @@ function openEditMovementModal(m, locs, onSaved) {
     '<div class="grid grid-2">' +
     '<div class="field"><label>จำนวน *</label><input id="em-qty" type="number" min="1" value="' + m.qty + '" /></div>' +
     '<div class="field"><label>หมายเลข Lot</label><input id="em-lot" value="' + U.escapeHtml(m.lot || '') + '" /></div>' +
-    '<div class="field"><label>วันหมดอายุ</label><input id="em-exp" type="date" value="' + expVal + '" /></div>' +
+    '<div class="field"><label>วันหมดอายุ (พ.ศ.)</label>' + U.createThaiDatePicker('em-exp', expVal) + '</div>' +
     '<div class="field"><label>สถานที่</label><select id="em-loc">' +
     locs.map(function (l) { return '<option value="' + l.id + '"' + (l.id === targetLocId ? ' selected' : '') + '>' + U.escapeHtml(l.name) + '</option>'; }).join('') +
     '</select></div>' +
@@ -104,7 +104,7 @@ function openEditMovementModal(m, locs, onSaved) {
   ok.onclick = function () {
     var qty = Number(body.querySelector('#em-qty').value);
     var lot = body.querySelector('#em-lot').value.trim();
-    var exp = body.querySelector('#em-exp').value;
+    var exp = U.getThaiDatePickerValue(body, 'em-exp');
     var locId = body.querySelector('#em-loc').value;
     var reason = body.querySelector('#em-reason').value.trim();
 

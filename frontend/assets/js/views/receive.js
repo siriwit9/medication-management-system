@@ -84,7 +84,7 @@ Views.receive = function (view) {
       box.innerHTML =
         '<div class="grid grid-2">' +
         '<div class="field"><label>Lot' + (m.requireLot ? ' *' : '') + '</label><input id="r-lot" placeholder="หมายเลข Lot" /></div>' +
-        '<div class="field"><label>วันหมดอายุ' + (m.requireLot ? ' *' : '') + '</label><input id="r-exp" type="date" /></div>' +
+        '<div class="field"><label>วันหมดอายุ (พ.ศ.)' + (m.requireLot ? ' *' : '') + '</label>' + U.createThaiDatePicker('r-exp', '') + '</div>' +
         '<div class="field"><label>จำนวน *</label><div class="qty-stepper"><button class="btn" id="q-minus">-</button>' +
         '<input id="r-qty" type="number" min="1" value="1" /><button class="btn" id="q-plus">+</button> <span class="muted">' + U.escapeHtml(m.unit || '') + '</span></div></div>' +
         '<div class="field"><label>สถานที่ *</label><select id="r-loc">' +
@@ -115,7 +115,7 @@ Views.receive = function (view) {
     function doSave() {
       var m = state.selected;
       var lot = view.querySelector('#r-lot').value.trim();
-      var exp = view.querySelector('#r-exp').value;
+      var exp = U.getThaiDatePickerValue(view, 'r-exp');
       var qty = Number(view.querySelector('#r-qty').value);
       var locId = view.querySelector('#r-loc').value;
       var srcSel = view.querySelector('#r-source').value;
