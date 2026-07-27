@@ -62,8 +62,14 @@ def main():
             if '/' in raw_exp:
                 parts = raw_exp.split('/')
                 if len(parts) == 3:
-                    exp = f"{parts[2]}-{int(parts[1]):02d}-{int(parts[0]):02d}"
+                    y = int(parts[2])
+                    if y >= 2400: y -= 543
+                    exp = f"{y}-{int(parts[1]):02d}-{int(parts[0]):02d}"
             else:
+                if len(raw_exp) >= 4 and raw_exp[:4].isdigit():
+                    y = int(raw_exp[:4])
+                    if y >= 2400:
+                        raw_exp = f"{y - 543}{raw_exp[4:]}"
                 exp = raw_exp
         formatted_stock.append({
             'id': s['id'],

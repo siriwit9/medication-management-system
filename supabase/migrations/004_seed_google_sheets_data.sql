@@ -3,9 +3,6 @@
 -- ===============================================================================
 
 -- 1) Update RLS Policies to public
-ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS from_location_id uuid REFERENCES locations(id) ON DELETE SET NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text DEFAULT '';
-
 DROP POLICY IF EXISTS settings_read ON settings;
 DROP POLICY IF EXISTS settings_write ON settings;
 CREATE POLICY settings_read ON settings FOR SELECT TO public USING (true);
