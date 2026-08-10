@@ -83,6 +83,7 @@ Views.receive = function (view) {
       if (!m) { box.innerHTML = ''; return; }
       box.innerHTML =
         '<div class="grid grid-2">' +
+        '<div class="field"><label>วันที่รับเข้า (พ.ศ.) *</label>' + U.createThaiDatePicker('r-recv-date', U.todayISO()) + '</div>' +
         '<div class="field"><label>Lot' + (m.requireLot ? ' *' : '') + '</label><input id="r-lot" placeholder="หมายเลข Lot" /></div>' +
         '<div class="field"><label>วันหมดอายุ (พ.ศ.)' + (m.requireLot ? ' *' : '') + '</label>' + U.createThaiDatePicker('r-exp', '') + '</div>' +
         '<div class="field"><label>จำนวน *</label><div class="qty-stepper"><button class="btn" id="q-minus">-</button>' +
@@ -114,6 +115,7 @@ Views.receive = function (view) {
 
     function doSave() {
       var m = state.selected;
+      var receiveDate = U.getThaiDatePickerValue(view, 'r-recv-date') || U.todayISO();
       var lot = view.querySelector('#r-lot').value.trim();
       var exp = U.getThaiDatePickerValue(view, 'r-exp');
       var qty = Number(view.querySelector('#r-qty').value);
@@ -125,7 +127,7 @@ Views.receive = function (view) {
 
       var btn = view.querySelector('#r-save');
       btn.disabled = true;
-      API.call('receive', { payload: { medicineId: m.id, locationId: locId, lot: lot, expiryDate: exp, qty: qty, source: source } })
+      API.call('receive', { payload: { medicineId: m.id, locationId: locId, lot: lot, expiryDate: exp, receiveDate: receiveDate, qty: qty, source: source } })
         .then(function () {
           Toast.success('รับเข้า ' + m.name + ' จำนวน ' + qty);
           loadTodayMovements();

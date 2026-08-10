@@ -82,14 +82,16 @@ Views.history = function (view) {
 function openEditMovementModal(m, locs, onSaved) {
   var targetLocId = m.toLocationId || m.fromLocationId;
   var expVal = m.expiryDate ? String(m.expiryDate).slice(0, 10) : '';
+  var recvDateVal = m.timestamp ? String(m.timestamp).slice(0, 10) : U.todayISO();
 
   var body = U.el('<div>' +
     '<p style="margin-bottom:12px"><strong>แก้ไขรายการ:</strong> ' + U.escapeHtml(m.medicineName) + ' (' + (MOVE_LABEL[m.type] || m.type) + ')</p>' +
     '<div class="grid grid-2">' +
+    '<div class="field"><label>วันที่รับเข้า/ทำรายการ (พ.ศ.) *</label>' + U.createThaiDatePicker('em-recv-date', recvDateVal) + '</div>' +
     '<div class="field"><label>จำนวน *</label><input id="em-qty" type="number" min="1" value="' + m.qty + '" /></div>' +
     '<div class="field"><label>หมายเลข Lot</label><input id="em-lot" value="' + U.escapeHtml(m.lot || '') + '" /></div>' +
     '<div class="field"><label>วันหมดอายุ (พ.ศ.)</label>' + U.createThaiDatePicker('em-exp', expVal) + '</div>' +
-    '<div class="field"><label>สถานที่</label><select id="em-loc">' +
+    '<div class="field" style="grid-column: 1 / -1"><label>สถานที่</label><select id="em-loc">' +
     locs.map(function (l) { return '<option value="' + l.id + '"' + (l.id === targetLocId ? ' selected' : '') + '>' + U.escapeHtml(l.name) + '</option>'; }).join('') +
     '</select></div>' +
     '</div>' +
@@ -105,6 +107,7 @@ function openEditMovementModal(m, locs, onSaved) {
     var qty = Number(body.querySelector('#em-qty').value);
     var lot = body.querySelector('#em-lot').value.trim();
     var exp = U.getThaiDatePickerValue(body, 'em-exp');
+    var recvDate = U.getThaiDatePickerValue(body, 'em-recv-date');
     var locId = body.querySelector('#em-loc').value;
     var reason = body.querySelector('#em-reason').value.trim();
 
@@ -112,7 +115,7 @@ function openEditMovementModal(m, locs, onSaved) {
     ok.disabled = true; ok.textContent = 'กำลังบันทึก...';
 
     API.call('saveMovement', {
-      movement: { id: m.id, qty: qty, lot: lot, expiryDate: exp, toLocationId: locId, reason: reason }
+      movement: { id: m.id, qty: qty, lot: lot, expiryDate: exp, receiveDate: recvDate, toLocationId: locId, reason: reason }
     }).then(function () {
       Toast.success('แก้ไขรายการและปรับยอดสต็อกเรียบร้อย');
       modal.close();

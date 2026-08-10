@@ -527,6 +527,9 @@ window.SupabaseAdapter = (function () {
           source: p.source || '',
           user_id: userId
         };
+        if (p.receiveDate) {
+          mov.created_at = p.receiveDate.indexOf('T') >= 0 ? p.receiveDate : (p.receiveDate + 'T12:00:00+07:00');
+        }
         return sb.from('movements').insert(mov);
       }).then(function () {
         return true;
@@ -732,6 +735,9 @@ window.SupabaseAdapter = (function () {
 
       return stockTask.then(function () {
         var updateMov = { qty: newQty, lot: newLot, expiry_date: newExp, reason: newReason };
+        if (mov.receiveDate) {
+          updateMov.created_at = mov.receiveDate.indexOf('T') >= 0 ? mov.receiveDate : (mov.receiveDate + 'T12:00:00+07:00');
+        }
         if (targetLocId && orig.type === 'receive') updateMov.to_location_id = targetLocId;
         if (userId) updateMov.user_id = userId;
         return sb.from('movements').update(updateMov).eq('id', id);
