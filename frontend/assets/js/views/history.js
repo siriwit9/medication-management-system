@@ -5,9 +5,12 @@ var MOVE_LABEL = { receive: 'รับเข้า', transfer: 'ย้าย', d
 
 Views.history = function (view) {
   var locsCache = [];
+  var isAdmin = Auth.hasRole('admin');
 
   view.innerHTML =
-    '<div class="page-head"><h1 class="page-title">ประวัติการเคลื่อนไหว</h1></div>' +
+    '<div class="page-head"><h1 class="page-title">ประวัติการเคลื่อนไหว</h1>' +
+    (isAdmin ? '<button class="btn btn-danger" id="h-clear-all"><span data-lucide="trash-2"></span> ลบประวัติทั้งหมด</button>' : '') +
+    '</div>' +
     '<div class="card mb-16"><div class="row" style="flex-wrap:wrap;gap:12px">' +
     '<div class="field" style="margin:0"><label>ประเภท</label><select id="h-type"><option value="">ทั้งหมด</option>' +
     Object.keys(MOVE_LABEL).map(function (k) { return '<option value="' + k + '">' + MOVE_LABEL[k] + '</option>'; }).join('') + '</select></div>' +
@@ -75,6 +78,13 @@ Views.history = function (view) {
     Exporter.toXlsx(aoa, 'ประวัติเคลื่อนไหว_' + U.todayISO(), 'การเคลื่อนไหว');
   };
 
+  var clearBtn = view.querySelector('#h-clear-all');
+  if (clearBtn) {
+    clearBtn.onclick = function () {
+      confirmClearAllMovements(load);
+    };
+  }
+
   U.refreshIcons();
   return load();
 };
@@ -128,19 +138,43 @@ function openEditMovementModal(m, locs, onSaved) {
 }
 
 function confirmDeleteMovement(m, onDeleted) {
-  Modal.confirm({
-    title: 'ยกเลิก / ลบรายการเคลื่อนไหว',
-    message: 'ยืนยันยกเลิกรายการ (' + U.escapeHtml(m.medicineName) + ' จำนวน ' + m.qty + ' ' + U.escapeHtml(m.unit) + ')? ระบบจะทำการปรับคืนยอดสต็อกยาให้อัตโนมัติ',
-    danger: true,
-    okText: 'ยืนยันยกเลิกรายการ'
-  }).then(function (ok) {
-    if (!ok) return;
-    Toast.success('กำลังยกเลิกรายการ...');
-    API.call('deleteMovement', { id: m.id }).then(function () {
-      Toast.success('ยกเลิกรายการเคลื่อนไหวและปรับคืนสต็อกสำเร็จ');
+  var body = U.el('<div>' +
+    '<p style="margin-bottom:12px">ต้องการลบรายการ <strong>' + U.escapeHtml(m.medicineName) + '</strong> จำนวน <strong>' + m.qty + ' ' + U.escapeHtml(m.unit) + '</strong> (' + (MOVE_LABEL[m.type] || m.type) + ') ใช่หรือไม่?</p>' +
+    '<label class="field-inline" style="margin-top:8px"><input type="checkbox" id="del-only-history" style="width:auto" checked /> ลบเฉพาะประวัติรายการนี้ (ไม่ปรับเปลี่ยนยอดสต็อกยาคงเหลือ)</label>' +
+    '</div>');
+  var footer = U.el('<div></div>');
+  var ok = U.el('<button class="btn btn-danger">ยืนยันการลบ</button>');
+  footer.appendChild(ok);
+  var modal = Modal.open({ title: 'ลบรายการประวัติการเคลื่อนไหว', body: body, footer: footer });
+
+  ok.onclick = function () {
+    var skipStockRevert = body.querySelector('#del-only-history').checked;
+    ok.disabled = true; ok.textContent = 'กำลังลบ...';
+    API.call('deleteMovement', { id: m.id, skipStockRevert: skipStockRevert }).then(function () {
+      Toast.success(skipStockRevert ? 'ลบรายการประวัติสำเร็จ' : 'ยกเลิกรายการและปรับคืนสต็อกสำเร็จ');
+      modal.close();
       onDeleted();
     }).catch(function (err) {
-      Toast.error(err.message || 'เกิดข้อผิดพลาดในการยกเลิก');
+      Toast.error(err.message || 'เกิดข้อผิดพลาดในการลบ');
+      ok.disabled = false; ok.textContent = 'ยืนยันการลบ';
+    });
+  };
+}
+
+function confirmClearAllMovements(onCleared) {
+  Modal.confirm({
+    title: 'ยืนยันการลบประวัติการเคลื่อนไหวทั้งหมด',
+    message: 'ต้องการลบประวัติการเคลื่อนไหวทั้งหมดออกจากระบบใช่หรือไม่? (การลบนี้จะลบเฉพาะประวัติความเคลื่อนไหว ไม่ลบโครงสร้างยา สถานที่เก็บยา ยอดสต็อกคงเหลือ หรือข้อมูลส่วนอื่นของระบบ)',
+    danger: true,
+    okText: 'ยืนยันลบประวัติทั้งหมด'
+  }).then(function (ok) {
+    if (!ok) return;
+    Toast.success('กำลังลบประวัติความเคลื่อนไหวทั้งหมด...');
+    API.call('clearMovements', {}).then(function () {
+      Toast.success('ลบประวัติการเคลื่อนไหวทั้งหมดเรียบร้อยแล้ว');
+      if (onCleared) onCleared();
+    }).catch(function (err) {
+      Toast.error(err.message || 'เกิดข้อผิดพลาดในการลบประวัติ');
     });
   });
 }

@@ -40,6 +40,8 @@ var ACTION_ROLES = {
   'deleteUser': 'admin',
   'resetPassword': 'admin',
   'testNotify': 'admin',
+  'clearMovements': 'admin',
+  'deleteMovement': 'pharmacist',
   // ใบเบิกยา
   'listRequisitions': 'staff',
   'getRequisition': 'staff',
@@ -112,6 +114,8 @@ function routeAction(action, req, user) {
     case 'getDashboard': return getDashboard(req.locationId || '');
     case 'search': return searchAll(req.query || '');
     case 'listMovements': return listMovements(req.filters || {});
+    case 'clearMovements': return clearMovements(req.filters || {}, user);
+    case 'deleteMovement': return deleteMovement(req.id, req.skipStockRevert, user);
     case 'exportRows': return exportRows(req.kind, req.filters || {});
 
     // ตั้งค่า

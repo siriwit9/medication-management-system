@@ -704,6 +704,33 @@ function indexById_(rows) {
   return map;
 }
 
+// ===== ลบประวัติความเคลื่อนไหวทั้งหมด (เฉพาะ Admin, ไม่ลบโครงสร้างยา/สต็อก/ระบบอื่น) =====
+function clearMovements(filters, user) {
+  if (!user || user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถลบประวัติได้');
+  filters = filters || {};
+  var from = filters.from ? new Date(filters.from) : null;
+  var to = filters.to ? new Date(filters.to + 'T23:59:59') : null;
+
+  return withLock_(function () {
+    deleteRowByMatch_('Movements', function (mv) {
+      if (filters.type && String(mv.type) !== String(filters.type)) return false;
+      var t = new Date(mv.timestamp);
+      if (from && t < from) return false;
+      if (to && t > to) return false;
+      return true;
+    });
+    return { cleared: true };
+  });
+}
+
+function deleteMovement(id, skipStockRevert, user) {
+  if (!id) throw new Error('ไม่พบรหัสรายการ');
+  return withLock_(function () {
+    deleteRowByMatch_('Movements', function (mv) { return String(mv.id) === String(id); });
+    return { deleted: true };
+  });
+}
+
 // ╔════════════════════════════════════════════════════════════════════════════════╗
 // ║  SECTION: Requisition
 // ╚════════════════════════════════════════════════════════════════════════════════╝
@@ -1170,6 +1197,8 @@ var ACTION_ROLES = {
   'deleteUser': 'admin',
   'resetPassword': 'admin',
   'testNotify': 'admin',
+  'clearMovements': 'admin',
+  'deleteMovement': 'pharmacist',
   // ใบเบิกยา
   'listRequisitions': 'staff',
   'getRequisition': 'staff',
@@ -1242,6 +1271,8 @@ function routeAction(action, req, user) {
     case 'getDashboard': return getDashboard(req.locationId || '');
     case 'search': return searchAll(req.query || '');
     case 'listMovements': return listMovements(req.filters || {});
+    case 'clearMovements': return clearMovements(req.filters || {}, user);
+    case 'deleteMovement': return deleteMovement(req.id, req.skipStockRevert, user);
     case 'exportRows': return exportRows(req.kind, req.filters || {});
 
     // ตั้งค่า

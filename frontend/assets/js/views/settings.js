@@ -6,6 +6,7 @@ Views.settings = function (view) {
   if (isAdmin) tabs.push({ id: 'hospital', label: 'ข้อมูลโรงพยาบาล' });
   if (isAdmin) tabs.push({ id: 'notify', label: 'การแจ้งเตือน' });
   if (isAdmin) tabs.push({ id: 'users', label: 'จัดการผู้ใช้' });
+  if (isAdmin) tabs.push({ id: 'history_admin', label: 'ลบประวัติเคลื่อนไหว' });
   tabs.push({ id: 'export', label: 'ส่งออกข้อมูล' });
   tabs.push({ id: 'reports', label: 'พิมพ์รายงาน' });
   tabs.push({ id: 'account', label: 'บัญชีของฉัน' });
@@ -19,7 +20,7 @@ Views.settings = function (view) {
   var content = view.querySelector('#set-content');
   var renderers = {
     hospital: renderHospital, notify: renderNotify, users: renderUsers,
-    export: renderExport, reports: renderReports, account: renderAccount
+    history_admin: renderHistoryAdmin, export: renderExport, reports: renderReports, account: renderAccount
   };
   view.querySelectorAll('[data-tab]').forEach(function (t) {
     t.onclick = function () {
@@ -43,8 +44,36 @@ function renderHospital(content) {
       '<div class="field"><label>แดง (เร่งด่วน)</label><input id="s-red" type="number" min="1" value="' + (s.warnRed || 35) + '" /></div>' +
       '<div class="field"><label>ส้ม</label><input id="s-orange" type="number" min="1" value="' + (s.warnOrange || 60) + '" /></div>' +
       '<div class="field"><label>เหลือง</label><input id="s-yellow" type="number" min="1" value="' + (s.warnYellow || 120) + '" /></div></div>' +
-      '<button class="btn btn-primary" id="s-save"><span data-lucide="save"></span> บันทึก</button></div>';
+      '<button class="btn btn-primary" id="s-save"><span data-lucide="save"></span> บันทึก</button></div>' +
+      '<div class="card mt-16" style="max-width:560px;border:1px solid #fecaca;background:#fff5f5">' +
+      '<h3 style="color:#dc2626;margin-top:0">จัดการประวัติความเคลื่อนไหว (สำหรับแอดมิน)</h3>' +
+      '<p class="muted" style="margin-bottom:12px">ล้างประวัติการเคลื่อนไหวทั้งหมด (รับเข้า / ย้าย / ตัดจ่าย / ปรับยอด) โดย<strong>ไม่ลบ</strong>โครงสร้างยา รายการยา สถานที่เก็บยา ยอดสต็อกคงเหลือ หรือข้อมูลระบบอื่น</p>' +
+      '<button class="btn btn-danger" id="s-clear-history"><span data-lucide="trash-2"></span> ลบประวัติความเคลื่อนไหวทั้งหมด</button>' +
+      '</div>';
     U.refreshIcons();
+
+    var clearHistBtn = content.querySelector('#s-clear-history');
+    if (clearHistBtn) {
+      clearHistBtn.onclick = function () {
+        Modal.confirm({
+          title: 'ยืนยันการลบประวัติความเคลื่อนไหวทั้งหมด',
+          message: 'ต้องการลบประวัติความเคลื่อนไหวทั้งหมดใช่หรือไม่? (ข้อมูลโครงสร้างยา รายการยา สถานที่จัดเก็บ ยอดสต็อกคงเหลือ และระบบอื่น ๆ จะไม่ถูกลบ)',
+          danger: true,
+          okText: 'ยืนยันลบประวัติทั้งหมด'
+        }).then(function (ok) {
+          if (!ok) return;
+          clearHistBtn.disabled = true;
+          Toast.success('กำลังลบประวัติความเคลื่อนไหว...');
+          API.call('clearMovements', {}).then(function () {
+            Toast.success('ลบประวัติความเคลื่อนไหวทั้งหมดเรียบร้อยแล้ว');
+          }).catch(function (e) {
+            Toast.error(e.message || 'เกิดข้อผิดพลาดในการลบประวัติ');
+          }).finally(function () {
+            clearHistBtn.disabled = false;
+          });
+        });
+      };
+    }
 
     var pendingLogo = null;
     var preview = content.querySelector('#s-logo-preview');
@@ -285,4 +314,86 @@ function renderAccount(content) {
       .catch(function (e) { Toast.error(e.message); })
       .finally(function () { btn.disabled = false; });
   };
+}
+
+/* ===== จัดการ/ลบประวัติความเคลื่อนไหว (สำหรับแอดมิน) ===== */
+function renderHistoryAdmin(content) {
+  content.innerHTML = '<div class="loader">กำลังโหลดข้อมูลประวัติ...</div>';
+  return API.call('listMovements', { filters: {} }).then(function (rows) {
+    var count = (rows || []).length;
+    content.innerHTML =
+      '<div class="card" style="max-width:600px">' +
+      '<h3 style="margin-top:0">จัดการประวัติความเคลื่อนไหว (สำหรับผู้ดูแลระบบ)</h3>' +
+      '<p>จำนวนรายการประวัติความเคลื่อนไหวในระบบปัจจุบัน: <strong>' + count + ' รายการ</strong></p>' +
+      '<div style="padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:16px">' +
+      '<p style="margin:0;font-size:14px"><strong>ข้อมูลที่ปลอดภัย (ไม่ถูกลบ):</strong> การลบประวัติความเคลื่อนไหวจะลบเฉพาะบันทึกในหน้า "ประวัติการเคลื่อนไหว" เท่านั้น <strong>โดยไม่ลบโครงสร้างยา (รายการยา), สถานที่จัดเก็บยา, ยอดสต็อกคงเหลือปัจจุบัน, ใบเบิกยา หรือระบบอื่น ๆ</strong></p>' +
+      '</div>' +
+      '<h4>ตัวเลือกที่ 1: ลบประวัติความเคลื่อนไหวตามเงื่อนไข</h4>' +
+      '<div class="grid grid-2">' +
+      '<div class="field"><label>ประเภทรายการ</label><select id="ha-type">' +
+      '<option value="">ทั้งหมดทุกประเภท</option>' +
+      '<option value="receive">รับเข้า</option>' +
+      '<option value="transfer">ย้าย</option>' +
+      '<option value="dispense">ตัดจ่าย/ทิ้ง</option>' +
+      '<option value="adjust">ปรับยอด</option>' +
+      '</select></div>' +
+      '<div></div>' +
+      '<div class="field"><label>ตั้งแต่วันที่</label><input id="ha-from" type="date" /></div>' +
+      '<div class="field"><label>ถึงวันที่</label><input id="ha-to" type="date" /></div>' +
+      '</div>' +
+      '<button class="btn btn-danger" id="ha-clear-filter"><span data-lucide="filter-x"></span> ลบประวัติตามเงื่อนไขที่เลือก</button>' +
+      '<hr style="margin:24px 0;border:none;border-top:1px solid var(--border)" />' +
+      '<h4 style="color:#dc2626">ตัวเลือกที่ 2: ลบประวัติความเคลื่อนไหวทั้งหมด</h4>' +
+      '<p class="muted">ล้างประวัติความเคลื่อนไหวทุกรายการในระบบให้เป็นศูนย์ทันที (โครงสร้างยาและสต็อกคงเหลือยังคงอยู่เหมือนเดิม)</p>' +
+      '<button class="btn btn-danger" id="ha-clear-all"><span data-lucide="trash-2"></span> ลบประวัติความเคลื่อนไหวทั้งหมด (' + count + ' รายการ)</button>' +
+      '</div>';
+    U.refreshIcons();
+
+    content.querySelector('#ha-clear-filter').onclick = function () {
+      var filters = {
+        type: content.querySelector('#ha-type').value,
+        from: content.querySelector('#ha-from').value,
+        to: content.querySelector('#ha-to').value
+      };
+      if (!filters.type && !filters.from && !filters.to) {
+        Toast.error('กรุณาเลือกประเภทหรือช่วงวันที่ หรือใช้ปุ่ม "ลบประวัติความเคลื่อนไหวทั้งหมด" ด้านล่าง');
+        return;
+      }
+      Modal.confirm({
+        title: 'ยืนยันการลบประวัติตามเงื่อนไข',
+        message: 'ต้องการลบประวัติความเคลื่อนไหวตามเงื่อนไขที่เลือกใช่หรือไม่? (ไม่กระทบโครงสร้างยาหรือสต็อกคงเหลือ)',
+        danger: true,
+        okText: 'ยืนยันการลบ'
+      }).then(function (ok) {
+        if (!ok) return;
+        var btn = content.querySelector('#ha-clear-filter'); btn.disabled = true;
+        API.call('clearMovements', { filters: filters }).then(function () {
+          Toast.success('ลบประวัติความเคลื่อนไหวตามเงื่อนไขเรียบร้อยแล้ว');
+          renderHistoryAdmin(content);
+        }).catch(function (e) {
+          Toast.error(e.message || 'เกิดข้อผิดพลาด');
+          btn.disabled = false;
+        });
+      });
+    };
+
+    content.querySelector('#ha-clear-all').onclick = function () {
+      Modal.confirm({
+        title: 'ยืนยันการลบประวัติความเคลื่อนไหวทั้งหมด',
+        message: 'ต้องการลบประวัติความเคลื่อนไหวทั้งหมด (' + count + ' รายการ) ออกจากระบบใช่หรือไม่? (ไม่ลบโครงสร้างยา สถานที่เก็บยา ยอดสต็อกคงเหลือ หรือระบบอื่น)',
+        danger: true,
+        okText: 'ยืนยันลบประวัติทั้งหมด'
+      }).then(function (ok) {
+        if (!ok) return;
+        var btn = content.querySelector('#ha-clear-all'); btn.disabled = true;
+        API.call('clearMovements', {}).then(function () {
+          Toast.success('ลบประวัติความเคลื่อนไหวทั้งหมดเรียบร้อยแล้ว');
+          renderHistoryAdmin(content);
+        }).catch(function (e) {
+          Toast.error(e.message || 'เกิดข้อผิดพลาด');
+          btn.disabled = false;
+        });
+      });
+    };
+  });
 }

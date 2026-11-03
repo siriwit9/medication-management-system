@@ -63,6 +63,7 @@ window.API = (function () {
       case 'listMovements': return sb.listMovements(params);
       case 'saveMovement': return sb.saveMovement(params.movement || params);
       case 'deleteMovement': return sb.deleteMovement(params);
+      case 'clearMovements': return sb.clearMovements(params);
       case 'listRequisitions': return sb.listRequisitions();
       case 'getRequisition': return sb.getRequisition(params.id);
       case 'saveRequisition': return sb.saveRequisition(params);

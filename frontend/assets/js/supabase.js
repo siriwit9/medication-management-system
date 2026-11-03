@@ -749,9 +749,17 @@ window.SupabaseAdapter = (function () {
 
   function deleteMovement(params) {
     var id = typeof params === 'object' ? params.id : params;
+    var skipStockRevert = typeof params === 'object' && !!params.skipStockRevert;
     if (!id || !isValidUuid(id)) return Promise.reject(new Error('ระบุ ID ไม่ถูกต้อง'));
 
     var sb = getClient();
+    if (skipStockRevert) {
+      return Promise.resolve(sb.from('movements').delete().eq('id', id)).then(function (res) {
+        if (res.error) throw res.error;
+        return true;
+      });
+    }
+
     return Promise.resolve(sb.from('movements').select('*').eq('id', id).single()).then(function (res) {
       if (res.error) throw res.error;
       var orig = res.data;
@@ -822,9 +830,37 @@ window.SupabaseAdapter = (function () {
 
       return revertP.then(function () {
         return sb.from('movements').delete().eq('id', id);
-      }).then(function () {
+      }).then(function (delRes) {
+        if (delRes && delRes.error) throw delRes.error;
         return true;
       });
+    });
+  }
+
+  /**
+   * ลบประวัติความเคลื่อนไหวทั้งหมด (หรือตามตัวกรอง) โดยไม่ลบโครงสร้างยา สถานที่ สต็อก หรือระบบอื่น
+   */
+  function clearMovements(params) {
+    params = params || {};
+    var user = window.Auth && window.Auth.getUser();
+    if (!user || user.role !== 'admin') {
+      return Promise.reject(new Error('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถลบประวัติการเคลื่อนไหวได้'));
+    }
+
+    var sb = getClient();
+    var filters = params.filters || params;
+    var query = sb.from('movements').delete();
+
+    if (filters.type) query = query.eq('type', filters.type);
+    if (filters.from) query = query.gte('created_at', filters.from + 'T00:00:00');
+    if (filters.to) query = query.lte('created_at', filters.to + 'T23:59:59');
+
+    // Supabase/PostgREST บังคับให้มีเงื่อนไข WHERE อย่างน้อย 1 ข้อในการ DELETE
+    query = query.not('id', 'is', null);
+
+    return Promise.resolve(query).then(function (res) {
+      if (res.error) throw res.error;
+      return { cleared: true };
     });
   }
 
@@ -1149,7 +1185,7 @@ window.SupabaseAdapter = (function () {
     listMedicines: listMedicines, saveMedicine: saveMedicine, deleteMedicine: deleteMedicine,
     uploadMedicineImage: uploadMedicineImage, getMedicineImage: getMedicineImage, uploadLogo: uploadLogo, getImage: getImage,
     listStockByLocation: listStockByLocation, exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
-    transferStock: transferStock, listMovements: listMovements, saveMovement: saveMovement, deleteMovement: deleteMovement,
+    transferStock: transferStock, listMovements: listMovements, saveMovement: saveMovement, deleteMovement: deleteMovement, clearMovements: clearMovements,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
     listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,
     importGoogleSheetSeed: importGoogleSheetSeed, testNotify: testNotify, sendTelegramMessage: sendTelegramMessage
