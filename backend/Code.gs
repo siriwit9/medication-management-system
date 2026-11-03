@@ -42,6 +42,8 @@ var ACTION_ROLES = {
   'testNotify': 'admin',
   'clearMovements': 'admin',
   'deleteMovement': 'pharmacist',
+  'clearStock': 'admin',
+  'deleteStock': 'admin',
   // ใบเบิกยา
   'listRequisitions': 'staff',
   'getRequisition': 'staff',
@@ -116,6 +118,8 @@ function routeAction(action, req, user) {
     case 'listMovements': return listMovements(req.filters || {});
     case 'clearMovements': return clearMovements(req.filters || {}, user);
     case 'deleteMovement': return deleteMovement(req.id, req.skipStockRevert, user);
+    case 'clearStock': return clearStock(req.locationId || '', user);
+    case 'deleteStock': return deleteStock(req.id, user);
     case 'exportRows': return exportRows(req.kind, req.filters || {});
 
     // ตั้งค่า

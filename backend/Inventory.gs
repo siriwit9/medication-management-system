@@ -205,3 +205,23 @@ function deleteMovement(id, skipStockRevert, user) {
     return { deleted: true };
   });
 }
+
+// ===== ลบจำนวนยาคงเหลือทั้งหมด (เฉพาะ Admin, ไม่ลบโครงสร้างยา/สถานที่) =====
+function clearStock(locationId, user) {
+  if (!user || user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถลบจำนวนยาคงเหลือได้');
+  return withLock_(function () {
+    deleteRowByMatch_('Stock', function (s) {
+      return !locationId || String(s.locationId) === String(locationId);
+    });
+    return { cleared: true };
+  });
+}
+
+function deleteStock(id, user) {
+  if (!user || user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบเท่านั้น');
+  if (!id) throw new Error('ไม่พบรหัสรายการสต็อก');
+  return withLock_(function () {
+    deleteRowByMatch_('Stock', function (s) { return String(s.id) === String(id); });
+    return { deleted: true };
+  });
+}

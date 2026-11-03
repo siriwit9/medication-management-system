@@ -3,6 +3,7 @@ window.Views = window.Views || {};
 Views.locationsStock = function (view, params) {
   var selected = params.location || '';
   var canManage = Auth.hasRole('pharmacist');
+  var isAdmin = Auth.hasRole('admin');
 
   return Promise.all([
     API.call('listLocations'),
@@ -12,7 +13,9 @@ Views.locationsStock = function (view, params) {
     var dash = res[1];
 
     view.innerHTML =
-      '<div class="page-head"><h1 class="page-title">ยาแต่ละจุด</h1></div>' +
+      '<div class="page-head"><h1 class="page-title">ยาแต่ละจุด</h1>' +
+      (isAdmin ? '<button class="btn btn-danger" id="ls-clear-stock"><span data-lucide="trash-2"></span> ลบจำนวนยาคงเหลือทั้งหมด</button>' : '') +
+      '</div>' +
       '<div class="grid grid-2 mb-16" id="loc-cards"></div>' +
       '<div id="stock-area"></div>';
 
@@ -33,10 +36,35 @@ Views.locationsStock = function (view, params) {
       API.call('listStockByLocation', { locationId: selected }).then(function (rows) {
         var title = selected ? (locs.filter(function (l) { return l.id === selected; })[0] || {}).name : 'รวมทุกสถานที่';
         area.innerHTML = '<div class="page-head"><h2 class="page-title" style="font-size:18px">สต็อก: ' + U.escapeHtml(title) + '</h2></div>' +
-          renderStockTable(rows, canManage, !selected);
+          renderStockTable(rows, canManage, !selected, isAdmin);
         bindActions(area, rows, locs, load);
         U.refreshIcons();
       });
+    }
+
+    var clearStockBtn = view.querySelector('#ls-clear-stock');
+    if (clearStockBtn) {
+      clearStockBtn.onclick = function () {
+        var locName = selected ? ((locs.filter(function (l) { return l.id === selected; })[0] || {}).name || '') : '';
+        var msg = selected
+          ? 'ต้องการลบจำนวนยาคงเหลือทั้งหมดใน "' + U.escapeHtml(locName) + '" ใช่หรือไม่? (ไม่ลบรายการยาในโครงสร้างคลัง)'
+          : 'ต้องการลบจำนวนยาคงเหลือทั้งหมดทุกจุดในระบบใช่หรือไม่? (จะรีเซ็ตจำนวนคงเหลือเป็น 0 ทั้งหมด โดยไม่ลบโครงสร้างยาหรือสถานที่เก็บยา)';
+        Modal.confirm({
+          title: 'ยืนยันการลบจำนวนยาคงเหลือ',
+          message: msg,
+          danger: true,
+          okText: 'ยืนยันลบจำนวนยาคงเหลือ'
+        }).then(function (ok) {
+          if (!ok) return;
+          Toast.success('กำลังลบจำนวนยาคงเหลือ...');
+          API.call('clearStock', { locationId: selected || '' }).then(function () {
+            Toast.success('ลบจำนวนยาคงเหลือเรียบร้อยแล้ว');
+            Views.locationsStock(view, { location: selected });
+          }).catch(function (e) {
+            Toast.error(e.message || 'เกิดข้อผิดพลาดในการลบสต็อก');
+          });
+        });
+      };
     }
 
     load();
@@ -44,7 +72,7 @@ Views.locationsStock = function (view, params) {
   });
 };
 
-function renderStockTable(rows, canManage, showLoc) {
+function renderStockTable(rows, canManage, showLoc, isAdmin) {
   if (!rows.length) return '<div class="card empty-state">ไม่มียาในส่วนนี้</div>';
   var head = '<tr><th>ชื่อยา</th>' + (showLoc ? '<th>สถานที่</th>' : '') + '<th>Lot</th><th>วันหมดอายุ</th><th>สถานะ</th><th>คงเหลือ</th>' + (canManage ? '<th>จัดการ</th>' : '') + '</tr>';
   var tagClass = { red: 'tag-red', orange: 'tag-orange', yellow: 'tag-yellow', green: 'tag-green' };
@@ -52,7 +80,9 @@ function renderStockTable(rows, canManage, showLoc) {
     var actions = canManage ?
       '<td><button class="btn btn-sm" data-act="dispense" data-id="' + r.stockId + '">ตัดจ่าย/ทิ้ง</button> ' +
       '<button class="btn btn-sm" data-act="count" data-id="' + r.stockId + '">ตรวจนับ</button> ' +
-      '<button class="btn btn-sm" data-act="transfer" data-id="' + r.stockId + '">ย้าย</button></td>' : '';
+      '<button class="btn btn-sm" data-act="transfer" data-id="' + r.stockId + '">ย้าย</button>' +
+      (isAdmin ? ' <button class="btn btn-sm btn-danger" data-act="delete" data-id="' + r.stockId + '">ลบ</button>' : '') +
+      '</td>' : '';
     var statusPill = (r.daysLeft !== undefined && r.bucket)
       ? '<span class="pill-tag ' + (tagClass[r.bucket] || 'tag-green') + '">' + U.daysLeftText(r.daysLeft) + '</span>'
       : '-';
@@ -75,7 +105,25 @@ function bindActions(area, rows, locs, reload) {
       if (act === 'dispense') openDispense(r, reload);
       else if (act === 'count') openCount(r, reload);
       else if (act === 'transfer') openTransfer(r, locs, reload);
+      else if (act === 'delete') confirmDeleteStockItem(r, reload);
     };
+  });
+}
+
+function confirmDeleteStockItem(r, reload) {
+  Modal.confirm({
+    title: 'ลบรายการสต็อกยาคงเหลือ',
+    message: 'ยืนยันลบจำนวนยาคงเหลือของ "' + U.escapeHtml(r.medicineName) + '" (Lot ' + U.escapeHtml(r.lot || '-') + ' จำนวน ' + r.qty + ' ' + U.escapeHtml(r.unit || '') + ')? (ไม่ลบชื่อยาออกจากโครงสร้างคลัง)',
+    danger: true,
+    okText: 'ยืนยันลบ'
+  }).then(function (ok) {
+    if (!ok) return;
+    API.call('deleteStock', { id: r.stockId }).then(function () {
+      Toast.success('ลบรายการสต็อกคงเหลือแล้ว');
+      reload();
+    }).catch(function (e) {
+      Toast.error(e.message || 'เกิดข้อผิดพลาดในการลบ');
+    });
   });
 }
 

@@ -46,9 +46,12 @@ function renderHospital(content) {
       '<div class="field"><label>เหลือง</label><input id="s-yellow" type="number" min="1" value="' + (s.warnYellow || 120) + '" /></div></div>' +
       '<button class="btn btn-primary" id="s-save"><span data-lucide="save"></span> บันทึก</button></div>' +
       '<div class="card mt-16" style="max-width:560px;border:1px solid #fecaca;background:#fff5f5">' +
-      '<h3 style="color:#dc2626;margin-top:0">จัดการประวัติความเคลื่อนไหว (สำหรับแอดมิน)</h3>' +
-      '<p class="muted" style="margin-bottom:12px">ล้างประวัติการเคลื่อนไหวทั้งหมด (รับเข้า / ย้าย / ตัดจ่าย / ปรับยอด) โดย<strong>ไม่ลบ</strong>โครงสร้างยา รายการยา สถานที่เก็บยา ยอดสต็อกคงเหลือ หรือข้อมูลระบบอื่น</p>' +
+      '<h3 style="color:#dc2626;margin-top:0">จัดการประวัติและสต็อกคงเหลือ (สำหรับแอดมิน)</h3>' +
+      '<p class="muted" style="margin-bottom:12px">ล้างเฉพาะประวัติการเคลื่อนไหว หรือ ลบจำนวนยาคงเหลือในคลัง (รีเซ็ตยอดเป็น 0) โดย<strong>ไม่ลบ</strong>โครงสร้างยา (รายการยา) สถานที่เก็บยา หรือข้อมูลระบบอื่น</p>' +
+      '<div class="row" style="flex-wrap:wrap;gap:8px">' +
       '<button class="btn btn-danger" id="s-clear-history"><span data-lucide="trash-2"></span> ลบประวัติความเคลื่อนไหวทั้งหมด</button>' +
+      '<button class="btn btn-danger" id="s-clear-stock"><span data-lucide="package-x"></span> ลบจำนวนยาคงเหลือทั้งหมด</button>' +
+      '</div>' +
       '</div>';
     U.refreshIcons();
 
@@ -70,6 +73,29 @@ function renderHospital(content) {
             Toast.error(e.message || 'เกิดข้อผิดพลาดในการลบประวัติ');
           }).finally(function () {
             clearHistBtn.disabled = false;
+          });
+        });
+      };
+    }
+
+    var clearStockBtn = content.querySelector('#s-clear-stock');
+    if (clearStockBtn) {
+      clearStockBtn.onclick = function () {
+        Modal.confirm({
+          title: 'ยืนยันการลบจำนวนยาคงเหลือทั้งหมด',
+          message: 'ต้องการลบจำนวนยาคงเหลือทั้งหมดในทุกจุดเก็บยา (รีเซ็ตยอดคงเหลือเป็น 0) ใช่หรือไม่? (โครงสร้างยา รายการยา 140+ รายการ และสถานที่เก็บยา จะไม่ถูกลบ)',
+          danger: true,
+          okText: 'ยืนยันลบจำนวนยาคงเหลือทั้งหมด'
+        }).then(function (ok) {
+          if (!ok) return;
+          clearStockBtn.disabled = true;
+          Toast.success('กำลังลบจำนวนยาคงเหลือทั้งหมด...');
+          API.call('clearStock', {}).then(function () {
+            Toast.success('ลบจำนวนยาคงเหลือทั้งหมดเรียบร้อยแล้ว');
+          }).catch(function (e) {
+            Toast.error(e.message || 'เกิดข้อผิดพลาดในการลบสต็อก');
+          }).finally(function () {
+            clearStockBtn.disabled = false;
           });
         });
       };
@@ -316,17 +342,23 @@ function renderAccount(content) {
   };
 }
 
-/* ===== จัดการ/ลบประวัติความเคลื่อนไหว (สำหรับแอดมิน) ===== */
+/* ===== จัดการ/ลบประวัติความเคลื่อนไหว และ สต็อกคงเหลือ (สำหรับแอดมิน) ===== */
 function renderHistoryAdmin(content) {
-  content.innerHTML = '<div class="loader">กำลังโหลดข้อมูลประวัติ...</div>';
-  return API.call('listMovements', { filters: {} }).then(function (rows) {
-    var count = (rows || []).length;
+  content.innerHTML = '<div class="loader">กำลังโหลดข้อมูล...</div>';
+  return Promise.all([
+    API.call('listMovements', { filters: {} }),
+    API.call('listStockByLocation', { locationId: '' })
+  ]).then(function (res) {
+    var rows = res[0] || [];
+    var stockRows = res[1] || [];
+    var count = rows.length;
+    var stockCount = stockRows.length;
     content.innerHTML =
       '<div class="card" style="max-width:600px">' +
-      '<h3 style="margin-top:0">จัดการประวัติความเคลื่อนไหว (สำหรับผู้ดูแลระบบ)</h3>' +
-      '<p>จำนวนรายการประวัติความเคลื่อนไหวในระบบปัจจุบัน: <strong>' + count + ' รายการ</strong></p>' +
+      '<h3 style="margin-top:0">จัดการประวัติความเคลื่อนไหว & จำนวนยาคงเหลือ (แอดมิน)</h3>' +
+      '<p>ประวัติความเคลื่อนไหวในระบบ: <strong>' + count + ' รายการ</strong> · รายการล็อตยาคงเหลือในคลัง: <strong>' + stockCount + ' รายการ</strong></p>' +
       '<div style="padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:16px">' +
-      '<p style="margin:0;font-size:14px"><strong>ข้อมูลที่ปลอดภัย (ไม่ถูกลบ):</strong> การลบประวัติความเคลื่อนไหวจะลบเฉพาะบันทึกในหน้า "ประวัติการเคลื่อนไหว" เท่านั้น <strong>โดยไม่ลบโครงสร้างยา (รายการยา), สถานที่จัดเก็บยา, ยอดสต็อกคงเหลือปัจจุบัน, ใบเบิกยา หรือระบบอื่น ๆ</strong></p>' +
+      '<p style="margin:0;font-size:14px"><strong>ข้อมูลที่ปลอดภัย (ไม่ถูกลบ):</strong> โครงสร้างคลัง, สถานที่จัดเก็บยา, รายการยาทั้งหมด (ชื่อยา/บาร์โค้ด/หน่วยนับ) และบัญชีผู้ใช้ <strong>จะไม่ถูกลบ</strong></p>' +
       '</div>' +
       '<h4>ตัวเลือกที่ 1: ลบประวัติความเคลื่อนไหวตามเงื่อนไข</h4>' +
       '<div class="grid grid-2">' +
@@ -344,8 +376,12 @@ function renderHistoryAdmin(content) {
       '<button class="btn btn-danger" id="ha-clear-filter"><span data-lucide="filter-x"></span> ลบประวัติตามเงื่อนไขที่เลือก</button>' +
       '<hr style="margin:24px 0;border:none;border-top:1px solid var(--border)" />' +
       '<h4 style="color:#dc2626">ตัวเลือกที่ 2: ลบประวัติความเคลื่อนไหวทั้งหมด</h4>' +
-      '<p class="muted">ล้างประวัติความเคลื่อนไหวทุกรายการในระบบให้เป็นศูนย์ทันที (โครงสร้างยาและสต็อกคงเหลือยังคงอยู่เหมือนเดิม)</p>' +
+      '<p class="muted">ล้างประวัติความเคลื่อนไหวทุกรายการในระบบให้เป็นศูนย์ทันที</p>' +
       '<button class="btn btn-danger" id="ha-clear-all"><span data-lucide="trash-2"></span> ลบประวัติความเคลื่อนไหวทั้งหมด (' + count + ' รายการ)</button>' +
+      '<hr style="margin:24px 0;border:none;border-top:1px solid var(--border)" />' +
+      '<h4 style="color:#dc2626">ตัวเลือกที่ 3: ลบจำนวนยาคงเหลือทั้งหมด (รีเซ็ตสต็อกเป็น 0)</h4>' +
+      '<p class="muted">ลบยอดยาคงเหลือและล็อตยาในคลังทุกจุดให้เป็น 0 โดยไม่ลบรายชื่อยาและโครงสร้างคลัง</p>' +
+      '<button class="btn btn-danger" id="ha-clear-stock"><span data-lucide="package-x"></span> ลบจำนวนยาคงเหลือทั้งหมด (' + stockCount + ' รายการ)</button>' +
       '</div>';
     U.refreshIcons();
 
@@ -380,7 +416,7 @@ function renderHistoryAdmin(content) {
     content.querySelector('#ha-clear-all').onclick = function () {
       Modal.confirm({
         title: 'ยืนยันการลบประวัติความเคลื่อนไหวทั้งหมด',
-        message: 'ต้องการลบประวัติความเคลื่อนไหวทั้งหมด (' + count + ' รายการ) ออกจากระบบใช่หรือไม่? (ไม่ลบโครงสร้างยา สถานที่เก็บยา ยอดสต็อกคงเหลือ หรือระบบอื่น)',
+        message: 'ต้องการลบประวัติความเคลื่อนไหวทั้งหมด (' + count + ' รายการ) ออกจากระบบใช่หรือไม่? (ไม่ลบโครงสร้างยา สถานที่เก็บยา หรือระบบอื่น)',
         danger: true,
         okText: 'ยืนยันลบประวัติทั้งหมด'
       }).then(function (ok) {
@@ -388,6 +424,25 @@ function renderHistoryAdmin(content) {
         var btn = content.querySelector('#ha-clear-all'); btn.disabled = true;
         API.call('clearMovements', {}).then(function () {
           Toast.success('ลบประวัติความเคลื่อนไหวทั้งหมดเรียบร้อยแล้ว');
+          renderHistoryAdmin(content);
+        }).catch(function (e) {
+          Toast.error(e.message || 'เกิดข้อผิดพลาด');
+          btn.disabled = false;
+        });
+      });
+    };
+
+    content.querySelector('#ha-clear-stock').onclick = function () {
+      Modal.confirm({
+        title: 'ยืนยันการลบจำนวนยาคงเหลือทั้งหมด',
+        message: 'ต้องการลบจำนวนยาคงเหลือทั้งหมด (' + stockCount + ' รายการ) ในทุกจุดเก็บยาใช่หรือไม่? (ไม่ลบโครงสร้างยา รายชื่อยา หรือสถานที่เก็บยา)',
+        danger: true,
+        okText: 'ยืนยันลบจำนวนยาคงเหลือทั้งหมด'
+      }).then(function (ok) {
+        if (!ok) return;
+        var btn = content.querySelector('#ha-clear-stock'); btn.disabled = true;
+        API.call('clearStock', {}).then(function () {
+          Toast.success('ลบจำนวนยาคงเหลือทั้งหมดเรียบร้อยแล้ว');
           renderHistoryAdmin(content);
         }).catch(function (e) {
           Toast.error(e.message || 'เกิดข้อผิดพลาด');

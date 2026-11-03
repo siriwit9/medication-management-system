@@ -731,6 +731,26 @@ function deleteMovement(id, skipStockRevert, user) {
   });
 }
 
+// ===== ลบจำนวนยาคงเหลือทั้งหมด (เฉพาะ Admin, ไม่ลบโครงสร้างยา/สถานที่) =====
+function clearStock(locationId, user) {
+  if (!user || user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถลบจำนวนยาคงเหลือได้');
+  return withLock_(function () {
+    deleteRowByMatch_('Stock', function (s) {
+      return !locationId || String(s.locationId) === String(locationId);
+    });
+    return { cleared: true };
+  });
+}
+
+function deleteStock(id, user) {
+  if (!user || user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบเท่านั้น');
+  if (!id) throw new Error('ไม่พบรหัสรายการสต็อก');
+  return withLock_(function () {
+    deleteRowByMatch_('Stock', function (s) { return String(s.id) === String(id); });
+    return { deleted: true };
+  });
+}
+
 // ╔════════════════════════════════════════════════════════════════════════════════╗
 // ║  SECTION: Requisition
 // ╚════════════════════════════════════════════════════════════════════════════════╝
@@ -1199,6 +1219,8 @@ var ACTION_ROLES = {
   'testNotify': 'admin',
   'clearMovements': 'admin',
   'deleteMovement': 'pharmacist',
+  'clearStock': 'admin',
+  'deleteStock': 'admin',
   // ใบเบิกยา
   'listRequisitions': 'staff',
   'getRequisition': 'staff',
@@ -1273,6 +1295,8 @@ function routeAction(action, req, user) {
     case 'listMovements': return listMovements(req.filters || {});
     case 'clearMovements': return clearMovements(req.filters || {}, user);
     case 'deleteMovement': return deleteMovement(req.id, req.skipStockRevert, user);
+    case 'clearStock': return clearStock(req.locationId || '', user);
+    case 'deleteStock': return deleteStock(req.id, user);
     case 'exportRows': return exportRows(req.kind, req.filters || {});
 
     // ตั้งค่า

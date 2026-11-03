@@ -864,6 +864,40 @@ window.SupabaseAdapter = (function () {
     });
   }
 
+  /**
+   * ลบจำนวนยาคงเหลือ (สต็อก) ทั้งหมดหรือเฉพาะจุด โดยไม่ลบโครงสร้างยา (medicines) หรือสถานที่ (locations)
+   */
+  function clearStock(params) {
+    params = params || {};
+    var user = window.Auth && window.Auth.getUser();
+    if (!user || user.role !== 'admin') {
+      return Promise.reject(new Error('เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถลบจำนวนยาคงเหลือทั้งหมดได้'));
+    }
+
+    var sb = getClient();
+    var query = sb.from('stock').delete();
+    if (params.locationId) {
+      query = query.eq('location_id', params.locationId);
+    } else {
+      query = query.not('id', 'is', null);
+    }
+
+    return Promise.resolve(query).then(function (res) {
+      if (res.error) throw res.error;
+      return { cleared: true };
+    });
+  }
+
+  function deleteStock(params) {
+    var id = typeof params === 'object' ? params.id : params;
+    if (!id || !isValidUuid(id)) return Promise.reject(new Error('ระบุ ID สต็อกไม่ถูกต้อง'));
+    var sb = getClient();
+    return Promise.resolve(sb.from('stock').delete().eq('id', id)).then(function (res) {
+      if (res.error) throw res.error;
+      return { deleted: true };
+    });
+  }
+
   // ================= Requisitions =================
   function listRequisitions() {
     return Promise.resolve(getClient().from('requisitions').select('*, from_loc:locations!from_location_id(name)').order('created_at', { ascending: false })).then(function (res) {
@@ -1186,6 +1220,7 @@ window.SupabaseAdapter = (function () {
     uploadMedicineImage: uploadMedicineImage, getMedicineImage: getMedicineImage, uploadLogo: uploadLogo, getImage: getImage,
     listStockByLocation: listStockByLocation, exportRows: exportRows, receiveStock: receiveStock, dispense: dispense, adjustCount: adjustCount,
     transferStock: transferStock, listMovements: listMovements, saveMovement: saveMovement, deleteMovement: deleteMovement, clearMovements: clearMovements,
+    clearStock: clearStock, deleteStock: deleteStock,
     listRequisitions: listRequisitions, getRequisition: getRequisition, saveRequisition: saveRequisition, deleteRequisition: deleteRequisition,
     listReceipts: listReceipts, getReceipt: getReceipt, saveReceipt: saveReceipt, deleteReceipt: deleteReceipt,
     importGoogleSheetSeed: importGoogleSheetSeed, testNotify: testNotify, sendTelegramMessage: sendTelegramMessage
